@@ -1,0 +1,6 @@
+{:name "ChromeDebugger"
+ :version "0.0.1"
+ :author "Dave Coates"
+ :source ""
+ :desc ""
+ :behaviors "ChromeDebugger.behaviors"}

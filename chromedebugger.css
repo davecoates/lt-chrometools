@@ -1,0 +1,12 @@
+#chrome-tabs {
+  position: relative;
+  max-height: 300px;
+  overflow: auto;
+}
+#chrome-tabs li {height: 30px; text-overflow: ellipsis; max-width: 100%; white-space: nowrap; overflow: hidden;}
+#chrome-tabs img {
+  position: relative;
+  top: 5px;
+  max-height: 20px; width:20px;
+  margin-right: 10px;
+}
