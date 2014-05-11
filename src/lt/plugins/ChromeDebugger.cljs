@@ -93,10 +93,20 @@
 (behavior ::connect!
           :triggers #{:connect!}
           :reaction (fn [this url]
+                      (println "connect!6")
                       (object/merge! this {:connected true})
                       ;; When a connection occurs we then need to select a tab
-                      (fetch/xhr url {}
-                                 (fn [d] (select-tab this (-> d js/JSON.parse (js->clj :keywordize-keys true)))))))
+                        (let [xhr (fetch/xhr url {}
+                                   (fn [d]
+                                     (if (not-empty d)
+                                       (select-tab this (-> d js/JSON.parse (js->clj :keywordize-keys true)))
+                                       (do
+                                        (popup/popup! {:header "We couldn't connect."
+                                                       :body [:span "There was a problem connecting. Check port and make
+                                                              sure chrome was launched with --remote-debugging-port"]
+                                                       :buttons [{:label "close"}]})
+                                         (object/raise this :close!)))))])))
+
 
 (behavior ::close
           :triggers #{:close!}
@@ -180,7 +190,6 @@
   (swap! id inc))
 
 
-(:scripts @(clients/by-name "Chrome Remote Debugger: http://localhost:9222/json"))
 
 ;(do
  ; (send (clients/by-id 114) {:id (next-id) :method "Runtime.evaluate" :params {:expression (str "alert('test');")}} (fn [a] (println "result " a)))
