@@ -102,8 +102,8 @@
                                        (select-tab this (-> d js/JSON.parse (js->clj :keywordize-keys true)))
                                        (do
                                         (popup/popup! {:header "We couldn't connect."
-                                                       :body [:span "There was a problem connecting. Check port and make
-                                                              sure chrome was launched with --remote-debugging-port"]
+                                                       :body [:span "There was a problem connecting. Check the port and make
+                                                              sure chrome was launched with the --remote-debugging-port option"]
                                                        :buttons [{:label "close"}]})
                                          (object/raise this :close!)))))])))
 
@@ -162,15 +162,13 @@
    :click (fn [] (action tab)))
 
 (defn connect-tab [client tab]
-  (println "connect-tab")
   (object/merge! client {:socket (socket client (:webSocketDebuggerUrl tab))
                          :tags [:chrome.client.remote]
                          :commands #{:editor.eval.cljs.exec
                                      :editor.eval.js
                                      :editor.eval.html
                                      :editor.eval.css}
-                         :type :chrome.client.remote })
-  (println "connected" client))
+                         :type :chrome.client.remote }))
 
 (defn select-tab [client tabs]
   "Present list of tabs from active connection."
