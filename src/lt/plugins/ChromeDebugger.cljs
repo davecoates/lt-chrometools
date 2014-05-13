@@ -30,12 +30,11 @@
     (println host port)
     (when (and host port)
       (let [client (clients/client! :chrome.client.remote)
-            url (str "http://" server "/json")
-            ]
+            url (str "http://" server "/json") ]
         (object/merge! client {:port port
                                :host host
                                :tabs-url url
-                               :name (str "Chrome Remote Debugger: " url)})
+                               :name "Chrome Remote Debugger"})
         (object/raise client :connect! url)))))
 
 (defn remote-connect []
@@ -93,7 +92,7 @@
 (behavior ::connect!
           :triggers #{:connect!}
           :reaction (fn [this url]
-                      (println "connect!6")
+                      (println this)
                       (object/merge! this {:connected true})
                       ;; When a connection occurs we then need to select a tab
                         (let [xhr (fetch/xhr url {}
@@ -113,6 +112,7 @@
           :reaction (fn [this]
                       (when-let [socket (:socket @this)]
                         (.close (:socket @this)))
+                      (swap! connected-tabs dissoc (-> @this :tab :id))
                       (clients/rem! this)))
 
 
@@ -127,7 +127,6 @@
 (behavior ::init-tab
            :triggers #{:connect}
            :reaction (fn [this]
-                       (println "lets go!")
                        (send this {:id (next-id) :method "Console.enable"})
                        (send this {:id (next-id) :method "Debugger.enable"})
                        (send this {:id (next-id) :method "Network.setCacheDisabled" :params {:cacheDisabled true}})))
@@ -135,7 +134,7 @@
 (behavior ::print-messages
           :triggers #{:message}
           :reaction (fn [this m]
-                      (println "print messages" m)
+                      ;(println "print messages" m)
                       ;(console/log (pr-str m))
                       ))
 (behavior ::handle-message
@@ -156,19 +155,28 @@
                         )))
 
 
+
 ;; Display preview of tab
 (defui tab-preview [action tab]
   [:li [:img {:src (:faviconUrl tab)}] (:title tab)]
-   :click (fn [] (action tab)))
+   :click (fn [e]
+            ; Close popup if open
+            (when-let [p (ctx/->obj :popup)]
+              (object/raise p :close!))
+            (action tab)))
+
 
 (defn connect-tab [client tab]
   (object/merge! client {:socket (socket client (:webSocketDebuggerUrl tab))
-                         :tags [:chrome.client.remote]
                          :commands #{:editor.eval.cljs.exec
                                      :editor.eval.js
                                      :editor.eval.html
                                      :editor.eval.css}
-                         :type :chrome.client.remote }))
+                         :tab tab
+                         :name (str "Chrome: " (:title tab))
+                         :type :chrome.client.remote })
+  (swap! connected-tabs assoc (:id tab) client))
+
 
 (defn select-tab [client tabs]
   "Present list of tabs from active connection."
@@ -176,9 +184,20 @@
         p (popup/popup! {:header "Select which tab to attach to"
                          :body [:div
                                 [:ul#chrome-tabs
-                                 (map #(tab-preview action %) (filter #(= (:type %) "page") tabs))]
+                                 (map #(tab-preview action %)
+                                      (filter #(and (= (:type %) "page")
+                                                    (nil? (@connected-tabs (:id %))))
+                                              tabs))]
                                 ]
                          :buttons [{:label "cancel"}]})]))
+
+
+; TODO: For a connection allow selection of a javascript file. Fetch script source
+; and either map to existing file or create new buffer to allow live eval
+;(cmd/command {:command :get-script-source
+;              :desc "Chrome Debugger: Fetch Script Source"
+;              :exec (fn [] )
+
 
 ;; List of pending callbacks. Dispatched by ::handle-message
 (def cbs (atom {}))
@@ -187,9 +206,11 @@
 (defn next-id []
   (swap! id inc))
 
+;; List of connected clients indexed by tab id.
+(def connected-tabs (atom {}))
 
 
 ;(do
- ; (send (clients/by-id 114) {:id (next-id) :method "Runtime.evaluate" :params {:expression (str "alert('test');")}} (fn [a] (println "result " a)))
-  ;"blah")
+;  (send c {:id (next-id) :method "Debugger.getScriptSource" :params {:scriptId "130"}} (fn [a] (println "result " a)))
+;  "blah")
 
