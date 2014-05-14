@@ -6,5 +6,6 @@
                             :lt.plugins.chromedebugger/print-messages
                             :lt.plugins.chromedebugger/js-eval
                             :lt.plugins.chromedebugger/handle-send!
+                            :lt.plugins.chromedebugger/change-live
                             :lt.plugins.chromedebugger/clear-queue-on-connect :lt.plugins.chromedebugger/handle-message :lt.plugins.chromedebugger/script-parsed]
      }}

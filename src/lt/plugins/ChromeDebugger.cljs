@@ -155,7 +155,7 @@
           :triggers #{:Debugger.scriptParsed}
           :reaction (fn [this s]
                       (let [url (-> s :params :url)]
-                        (println "ScriptParsed" url)
+                        (println "Script Parsed" (-> s :params))
                         (object/update! this [:scripts] assoc-in [(files/basename url) url] (:params s))
                         )))
 
@@ -214,16 +214,48 @@
     (object/raise this :editor.eval.js.change-live! msg)))
 
 
+(defn find-script [client path]
+  (let [found? (-> (@client :scripts)
+                   (get (files/basename path)))]
+    found?))
+
+(defn script-exists? [client id cb]
+  (send client {:id (next-id) :method "Debugger.canSetScriptSource" :params {:scriptId id}}
+        (fn [res]
+          (cb (-> res :result :result)))))
+
+(defn remove-script! [client path id]
+  (let [[k v] (first (filter #(= id (:scriptId (second %))) (find-script client path)))]
+    (object/update! client [:scripts (files/basename path)] dissoc k)))
+
+
 (defn must-eval-file? [client msg]
   ;;we eval the whole file if there's no meta, or this file isn't loaded in the current page
   (when (-> msg :data :path)
     (or (not (-> msg :data :meta))
-        (not (devtools/find-script client (-> msg :data :path))))))
+        (not (find-script client (-> msg :data :path))))))
 
 
 (defn eval-js [client msg cb]
   (send client {:id (next-id) :method "Runtime.evaluate" :params {:expression (:code msg)}}
         cb))
+
+(defn changelive! [client obj path code cb else]
+  (println "changelive")
+  (println code)
+  (if-let [s (find-script client path)]
+    (let [id (-> s vals first :scriptId)]
+      (script-exists? client id
+                      (fn [exists?]
+                        (if-not exists?
+                          (do (remove-script! client path id) (changelive! client obj path code cb else))
+                          (do
+                            (println "set script source" id)
+                            (object/merge! obj {:script-id id})
+                            ;;TODO: handle multiples
+                            (send client {:id (next-id) :method "Debugger.setScriptSource" :params {:scriptId id :scriptSource code}}
+                                  cb))))))
+    (else)))
 
 (behavior ::handle-send!
                   :triggers #{:send!}
@@ -242,6 +274,24 @@
                                     (eval-js this  data (fn [res]
                                                                                     (eval-js-form this msg)))))
                                 (eval-js-form this msg))))
+
+(behavior ::change-live
+                  :triggers #{:editor.eval.js.change-live!}
+                  :reaction (fn [this msg]
+                              (when-let [ed (object/by-id (:cb msg))]
+                                (when (-> msg :data :path)
+                                  ;; TODO: We can't just fetch editor content - eg. CoffeeScript.
+                                  ;; Probably need plugin to pass through full file content
+                                  ;; TODO: You should be able to do partial set script source and
+                                  ;; it just works out diff an applies patch. This never works if
+                                  ;; in closure but otherwise maybe....
+                                  (changelive! this ed (-> msg :data :path) (editor/->val ed)
+                                               (fn [res]
+                                                 (println res)
+                                                 ;;TODO: check for exception, otherwise, assume success
+                                                 (object/raise ed :editor.eval.js.change-live.success)
+                                                 )
+                                               identity)))))
 
 
 ; TODO: For a connection allow selection of a javascript file. Fetch script source
