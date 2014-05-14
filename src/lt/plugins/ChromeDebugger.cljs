@@ -5,12 +5,15 @@
             [lt.objs.files :as files]
             [lt.objs.popup :as popup]
             [lt.objs.context :as ctx]
+            [lt.objs.editor :as editor]
             [lt.objs.editor.pool :as pool]
             [lt.object :as object]
             [lt.objs.clients :as clients]
             [fetch.core :as fetch]
+            [lt.objs.clients.devtools :as devtools]
             [lt.util.dom :as dom]
             [lt.util.cljs :refer [js->clj]]
+            [crate.binding :refer [bound subatom]]
             [clojure.string :as string])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
@@ -140,6 +143,7 @@
 (behavior ::handle-message
           :triggers #{:message}
           :reaction (fn [this m]
+                      ;(println "Message: " m)
                       (if-let [cb (@cbs (:id m))]
                         (do
                           (cb m)
@@ -151,6 +155,7 @@
           :triggers #{:Debugger.scriptParsed}
           :reaction (fn [this s]
                       (let [url (-> s :params :url)]
+                        (println "ScriptParsed" url)
                         (object/update! this [:scripts] assoc-in [(files/basename url) url] (:params s))
                         )))
 
@@ -192,6 +197,53 @@
                          :buttons [{:label "cancel"}]})]))
 
 
+(defn handle-cb [cbid command data]
+  (object/raise clients/clients :message [cbid command data]))
+
+
+(defn eval-js-form [this msg]
+  (let [data (assoc (:data msg) :code (-> msg :data :code))]
+    (eval-js  this data
+                            (fn [res]
+                                (let [result (inspector->result this res)
+                                      req (:data msg)
+                                      result (assoc result :meta (:meta req) :no-inspect true)]
+                                  (if-not (:ex result)
+                                    (handle-cb (:cb msg) :editor.eval.js.result result)
+                                    (handle-cb (:cb msg) :editor.eval.js.exception result)))))
+    (object/raise this :editor.eval.js.change-live! msg)))
+
+
+(defn must-eval-file? [client msg]
+  ;;we eval the whole file if there's no meta, or this file isn't loaded in the current page
+  (when (-> msg :data :path)
+    (or (not (-> msg :data :meta))
+        (not (devtools/find-script client (-> msg :data :path))))))
+
+
+(defn eval-js [client msg cb]
+  (send client {:id (next-id) :method "Runtime.evaluate" :params {:expression (:code msg)}}
+        cb))
+
+(behavior ::handle-send!
+                  :triggers #{:send!}
+                  :reaction (fn [this msg]
+                              (object/raise this (keyword (str (:command msg) "!")) msg)
+                              ))
+
+
+(behavior ::js-eval
+                  :triggers #{:editor.eval.js!}
+                  :reaction (fn [this msg]
+                              (if (must-eval-file? this msg)
+                                (when-let [ed (object/by-id (:cb msg))]
+                                  (let [data (:data msg)
+                                        data (assoc data :code (str (editor/->val ed) "\n\n//# sourceURL=" (-> data :path)))]
+                                    (eval-js this  data (fn [res]
+                                                                                    (eval-js-form this msg)))))
+                                (eval-js-form this msg))))
+
+
 ; TODO: For a connection allow selection of a javascript file. Fetch script source
 ; and either map to existing file or create new buffer to allow live eval
 ;(cmd/command {:command :get-script-source
@@ -214,3 +266,104 @@
 ;  (send c {:id (next-id) :method "Debugger.getScriptSource" :params {:scriptId "130"}} (fn [a] (println "result " a)))
 ;  "blah")
 
+
+
+
+;;*********************************************************
+;; Inspectors (copied from devtools.cljs)
+;;*********************************************************
+
+
+(defn format-value [v]
+  (let [val (:value v)]
+    (cond
+     (= val "undefined") "undefined"
+     (= (:type v) "string") (pr-str val)
+     (or (true? val) (false? val)) (pr-str val)
+     (or (nil? val)
+         (empty? val)) "null"
+     :else (:value v))))
+
+(defn i-compare [a b]
+  (let [ia (.indexOf a "__")
+        ib (.indexOf b "__")]
+    (if (and (= ia -1)
+             (= ib -1))
+      (compare a b)
+      (cond
+       (and (> ia -1)
+            (> ib -1)) (compare a b)
+       (> ia -1) 1
+       :else -1))))
+
+(defn ->name [obj]
+  (let [n (or (-> obj :name) (-> obj :value :description) (:description obj) "UnknownObject")]
+    (cond
+     (> (.indexOf n "e.fn.e.init") -1) (str "jQuery" (subs n 11))
+     :else n)))
+
+(defui desc [this obj]
+  [:h2 [:em (->name obj)] (when (:value obj) (str ": " (-> obj :value :description)))]
+  :click (fn []
+           (if (:open @this)
+             (object/merge! this {:open false})
+             (do
+               (object/merge! this {:open true})
+               (when-not (seq (:children @this))
+                 (send (:client @this) {:id 1 :method "Runtime.getProperties" :params {:objectId (or (-> obj :value :objectId) (:objectId obj)) :ownProperties true}}
+                       (fn [d]
+                         (object/merge! this {:children (-> d :result :result)}))))))))
+
+(defui props [this children]
+  [:ul
+   (for [c (sort-by :name i-compare children)]
+     (do
+       (if (and (= (-> c :value :type) "object")
+                (-> c :value :objectId))
+         [:li (object/->content (object/create ::inspector-object (:client @this) c))]
+         [:li [:em (:name c)] ": " (or (-> c :value :description) (str (-> c :value format-value)))])))])
+
+(defn ->open [this]
+  (if (:open this)
+    "inspector-object open"
+    "inspector-object"))
+
+(defn inspector->result [client o]
+  (let [res (-> o :result)
+        data (:result res)]
+    (if (:wasThrown res)
+      {:ex (:description data)}
+      {:result (condp = (:type data)
+                 "object" (object/->content (object/create ::inspector-object client data))
+                 (or (:description data) (pr-str (:value data)))
+                 )})))
+
+(defn clear-unused-inspectors []
+  (doseq [obj (object/by-tag :inspector.object)
+          :when (or (not (object/->content obj))
+                    (not (dom/parents (object/->content obj) :body)))]
+    (object/destroy! obj)))
+
+(behavior ::clean-inspectors-timer
+          :triggers #{:init}
+          :reaction (fn [this]
+                      ;;Every minute clear extraneous inspectors
+                      (every 60000 clear-unused-inspectors)
+                      ))
+
+(behavior ::clear-inspector-object
+          :triggers #{:destroy}
+          :reaction (fn [this]
+                      (when-let [id (or (-> @this :info :value :objectId)
+                                        (-> @this :info :objectId))]
+                        (send (:client @this) {:id (next-id) :method "Runtime.releaseObject" :params {:objectId id}}))))
+
+(object/object* ::inspector-object
+                :tags #{:inspector.object}
+                :init (fn [this client m]
+                        (object/merge! this {:client client
+                                             :info m})
+                        [:div {:class (bound this ->open)}
+                         (desc this m)
+                         [:div
+                          (bound (subatom this :children) (partial props this))]]))
