@@ -18,7 +18,10 @@
   (:require-macros [lt.macros :refer [behavior defui]]))
 
 
-;; Add connector related
+;;;; Connector
+
+;; Contains remote server details in form hostname:port
+(def remote-server (atom nil))
 
 (defui server-input []
   [:input {:type "text" :placeholder "host:port" :value "localhost:"}]
@@ -28,17 +31,22 @@
           (ctx/out! :popup.input)))
 
 (defn connect-to-remote [server]
-  "Connect to remote debugging interface specified by server (host:port)"
+  "Connect to remote debugging interface specified by server (host:port)
+
+  Saves server in remote-server var for next connection attempt. On failure
+  this is reset. "
   (let [[host port] (string/split server ":")]
-    (println host port)
     (when (and host port)
       (let [client (clients/client! :chrome.client.remote)
             url (str "http://" server "/json") ]
+        ; Save settings
+        (reset! remote-server server)
         (object/merge! client {:port port
                                :host host
                                :tabs-url url
                                :name "Chrome Remote Debugger"})
         (object/raise client :connect! url)))))
+
 
 (defn remote-connect []
   "Display UI for entering server details"
@@ -56,15 +64,18 @@
     (dom/focus input)
     (.setSelectionRange input 1000 1000)))
 
+
 (scl/add-connector {:name "Chrome (Remote Debugging Protocol)"
                     :desc "Enter in the host:port address of remote debugging server to connect to"
                     :connect (fn []
-                               (remote-connect)
-                               )})
+                               (if @remote-server
+                                 (connect-to-remote @remote-server)
+                                 (remote-connect)))})
 
 
 
 (defn socket [this url]
+  "Establish connection to url against client this"
   (let [sock (js/WebSocket. url)]
     (set! (.-onopen sock) #(do
                              (object/merge! this {:connected true})
@@ -73,23 +84,33 @@
                                             :message
                                             (-> (js/JSON.parse (.-data %))
                                                 (js->clj :keywordize-keys true))))
+    ;; TODO: On close should try reconnect if appears to be due to devtools
+    ;; being opened. In theory this should be 1006 code but that seems to always
+    ;; be the code even when called from close! below (tried passing code through
+    ;; but had no effect)
     sock))
 
 
 (defn send* [client m cb]
+  "Make actual send call to connection. See send below."
   (.send (:socket @client) (js/JSON.stringify (clj->js m)))
   (when cb
     (swap! cbs assoc (:id m) cb)))
 
 
 (defn send [client m & [cb]]
+  "Send message m to client with optional callback
+
+  Queues callbacks if no connection available
+  "
   (if (:connected @client)
     (send* client m cb)
     (object/update! client [:queue] conj [client m cb])))
 
 
 
-;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 
 ;; Initially we try fetch the json list of available tabs to debug
 (behavior ::connect!
@@ -101,9 +122,10 @@
                         (let [xhr (fetch/xhr url {}
                                    (fn [d]
                                      (if (not-empty d)
-                                       (select-tab this (-> d js/JSON.parse (js->clj :keywordize-keys true)))
+                                         (select-tab this (-> d js/JSON.parse (js->clj :keywordize-keys true)))
                                        (do
-                                        (popup/popup! {:header "We couldn't connect."
+                                         (reset! remote-server nil)
+                                         (popup/popup! {:header "We couldn't connect."
                                                        :body [:span "There was a problem connecting. Check the port and make
                                                               sure chrome was launched with the --remote-debugging-port option"]
                                                        :buttons [{:label "close"}]})
@@ -114,7 +136,7 @@
           :triggers #{:close!}
           :reaction (fn [this]
                       (when-let [socket (:socket @this)]
-                        (.close (:socket @this)))
+                        (.close socket))
                       (swap! connected-tabs dissoc (-> @this :tab :id))
                       (clients/rem! this)))
 
