@@ -9,9 +9,11 @@
             [lt.objs.editor.pool :as pool]
             [lt.object :as object]
             [lt.objs.clients :as clients]
+            [lt.objs.eval :as eval]
             [fetch.core :as fetch]
             [lt.objs.clients.devtools :as devtools]
             [lt.util.dom :as dom]
+            [lt.plugins.js]
             [lt.util.cljs :refer [js->clj]]
             [crate.binding :refer [bound subatom]]
             [clojure.string :as string])
@@ -84,10 +86,6 @@
                                             :message
                                             (-> (js/JSON.parse (.-data %))
                                                 (js->clj :keywordize-keys true))))
-    ;; TODO: On close should try reconnect if appears to be due to devtools
-    ;; being opened. In theory this should be 1006 code but that seems to always
-    ;; be the code even when called from close! below (tried passing code through
-    ;; but had no effect)
     sock))
 
 
@@ -148,12 +146,39 @@
                       (doseq [msg (:queue @this)]
                         (apply send msg))))
 
+
+;;; TODO: Think about how this work. We need a way to get data
+;;; back. We can poll but is there another way?
+(def lttools-str "
+
+  window.lttools = {
+    watch: function(exp, meta) {
+      if (!window.lttools.watchers[meta.ev]) {
+        window.lttools.watchers[meta.ev] = {};
+      }
+      window.lttools.watchers[meta.ev][meta.id] = {
+        exp: exp,
+        meta: meta
+      };
+    },
+    watchers: {}
+  };
+  ")
+
 ;; Called when a tab has been selected for debugging
 (behavior ::init-tab
            :triggers #{:connect}
            :reaction (fn [this]
+                       ;; Copy lttools object from browser utils. This gives us
+                       ;; things like JS watches.
+                       (send this {:id (next-id) :method "Runtime.enable"})
                        (send this {:id (next-id) :method "Console.enable"})
-                       (send this {:id (next-id) :method "Debugger.enable"})
+                       (send this {:id (next-id) :method "Debugger.enable"}
+                             (fn []
+                               (send this {:id (next-id)
+                                           :method "Runtime.evaluate"
+                                           :params {:expression lttools-str}})))
+                               ;( js/lttools browser/utils)))
                        (send this {:id (next-id) :method "Network.setCacheDisabled" :params {:cacheDisabled true}})))
 
 (behavior ::print-messages
@@ -165,6 +190,7 @@
 (behavior ::handle-message
           :triggers #{:message}
           :reaction (fn [this m]
+                      (println "Message " (:method m) (:id m))
                       ;(println "Message: " m)
                       (if-let [cb (@cbs (:id m))]
                         (do
@@ -181,7 +207,21 @@
                         (object/update! this [:scripts] assoc-in [(files/basename url) url] (:params s))
                         )))
 
+(behavior ::console-log
+          :triggers #{:Console.messageAdded}
+          :reaction (fn [this m]
+                      ;; TODO
+                      nil))
 
+
+(behavior ::inspector-detached
+           :triggers #{:Inspector.detached}
+           :reaction (fn [this m]
+                       ;; TODO: If replaced_with_devtools perhaps
+                       ;; we should retry periodically? Notify
+                       ;; the user at the very least.
+                       (println (-> m :params :reason))
+                       (object/raise this :close!)))
 
 ;; Display preview of tab
 (defui tab-preview [action tab]
@@ -264,7 +304,6 @@
 
 (defn changelive! [client obj path code cb else]
   (println "changelive")
-  (println code)
   (if-let [s (find-script client path)]
     (let [id (-> s vals first :scriptId)]
       (script-exists? client id
@@ -307,7 +346,8 @@
                                   ;; TODO: You should be able to do partial set script source and
                                   ;; it just works out diff an applies patch. This never works if
                                   ;; in closure but otherwise maybe....
-                                  (changelive! this ed (-> msg :data :path) (editor/->val ed)
+                                  (changelive! this ed (-> msg :data :path)
+                                               (js/lt.plugins.watches.watched-range ed nil nil lt.plugins.js/src->watch)
                                                (fn [res]
                                                  (println res)
                                                  ;;TODO: check for exception, otherwise, assume success
