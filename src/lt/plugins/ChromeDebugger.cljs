@@ -12,9 +12,10 @@
             [lt.objs.eval :as eval]
             [fetch.core :as fetch]
             [lt.objs.clients.devtools :as devtools]
+            [lt.objs.notifos :as notifos]
             [lt.util.dom :as dom]
             [lt.plugins.js]
-            [lt.util.cljs :refer [js->clj]]
+            [lt.util.cljs :refer [wait js->clj]]
             [crate.binding :refer [bound subatom]]
             [clojure.string :as string])
   (:require-macros [lt.macros :refer [behavior defui]]))
@@ -184,14 +185,13 @@
 (behavior ::print-messages
           :triggers #{:message}
           :reaction (fn [this m]
+                      ;(println "Message " (:method m) (:id m))
                       ;(println "print messages" m)
                       ;(console/log (pr-str m))
                       ))
 (behavior ::handle-message
           :triggers #{:message}
           :reaction (fn [this m]
-                      (println "Message " (:method m) (:id m))
-                      ;(println "Message: " m)
                       (if-let [cb (@cbs (:id m))]
                         (do
                           (cb m)
@@ -203,9 +203,7 @@
           :triggers #{:Debugger.scriptParsed}
           :reaction (fn [this s]
                       (let [url (-> s :params :url)]
-                        (println "Script Parsed" (-> s :params))
-                        (object/update! this [:scripts] assoc-in [(files/basename url) url] (:params s))
-                        )))
+                        (object/update! this [:scripts] assoc-in [(files/basename url) url] (:params s)))))
 
 (behavior ::console-log
           :triggers #{:Console.messageAdded}
@@ -217,11 +215,55 @@
 (behavior ::inspector-detached
            :triggers #{:Inspector.detached}
            :reaction (fn [this m]
-                       ;; TODO: If replaced_with_devtools perhaps
-                       ;; we should retry periodically? Notify
-                       ;; the user at the very least.
-                       (println (-> m :params :reason))
+                       ;; Add a floating button to page with option
+                       ;; to reconnect or cancel.
+                       ;; TODO: Where to put this button? Option to dismiss required
+                       (dom/prepend (object/->content (pool/last-active))
+                                    (object/->content (object/create ::reconnect-label (:tab @this))))
+                                    ;(reconnect-button (:tab @this)))
+                       (when (= "replaced_with_devtools" (-> m :params :reason))
+                         (println "Dev tools opened: connection closed"))
                        (object/raise this :close!)))
+
+
+
+
+;;; Reconnect button gives user option to reconnect to a tab
+;;; that was forcefully disconnected (often due to opening devtools)
+(defui reconnect-button [label tab]
+  [:button
+   {:style "position: relative; top: 0px;"}
+   (str "Reconnect: " (:title tab))]
+  :click (fn [e]
+           (let [client (clients/client! :chrome.client.remote)]
+             (connect-tab client tab))))
+
+
+(object/object* ::reconnect-label
+                :tags #{:reconnect-label}
+                :init (fn [this tab]
+                        (object/merge! this {:tab tab})
+                        (reconnect-button this tab)))
+
+
+(behavior ::on-remove-reconnect-label
+          :triggers #{:remove-label}
+          :reaction (fn [this]
+                      (object/destroy! this)))
+
+
+;; On connection remove any reconnection labels that may be still
+;; exist for that tab
+(behavior ::remove-label
+          :triggers #{:connect}
+          :reaction (fn [this that]
+                      (let [id (-> @this :tab :id)
+                            labels (object/by-tag :reconnect-label)]
+                        (doseq [label labels
+                                :when (= (-> @label :tab :id) id)]
+                          (object/raise label :remove-label)))))
+
+
 
 ;; Display preview of tab
 (defui tab-preview [action tab]
