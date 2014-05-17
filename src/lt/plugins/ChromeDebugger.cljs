@@ -15,6 +15,7 @@
             [lt.objs.notifos :as notifos]
             [lt.util.dom :as dom]
             [lt.plugins.js]
+            [lt.objs.clients.ws :as ws]
             [lt.util.cljs :refer [wait js->clj]]
             [crate.binding :refer [bound subatom]]
             [clojure.string :as string])
@@ -150,44 +151,47 @@
                         (apply send msg))))
 
 
-;;; TODO: Think about how this work. We need a way to get data
-;;; back. We can poll but is there another way?
-(def lttools-str "
+;; Raw js to send through to load lttools. We use same implementation as
+;; the remote browser websocket connection.
+(def load-lttools (str "
+  (function () {
+    function loadScript(sScriptSrc) {
+      var oHead = document.getElementsByTagName('head')[0];
+      var oScript = document.createElement('script');
+      oScript.setAttribute('src',sScriptSrc);
+      oScript.setAttribute('type','text/javascript');
+      oScript.setAttribute('id','lt_ws');
+      oHead.appendChild(oScript);
+    }
+    loadScript('http://localhost:" ws/port "/socket.io/lighttable/ws.js');
+  }());
+  "))
 
-  window.lttools = {
-    watch: function(exp, meta) {
-      if (!window.lttools.watchers[meta.ev]) {
-        window.lttools.watchers[meta.ev] = {};
-      }
-      window.lttools.watchers[meta.ev][meta.id] = {
-        exp: exp,
-        meta: meta
-      };
-    },
-    watchers: {}
-  };
-  ")
+
+(defn inject-lttools [client]
+  (send client {:id (next-id)
+              :method "Runtime.evaluate"
+              :params {:expression load-lttools}}
+        (fn [r] (println r))
+        ))
 
 ;; Called when a tab has been selected for debugging
 (behavior ::init-tab
            :triggers #{:connect}
            :reaction (fn [this]
+                       (println this)
                        ;; Copy lttools object from browser utils. This gives us
                        ;; things like JS watches.
                        (send this {:id (next-id) :method "Runtime.enable"})
                        (send this {:id (next-id) :method "Console.enable"})
                        (send this {:id (next-id) :method "Debugger.enable"}
-                             (fn []
-                               (send this {:id (next-id)
-                                           :method "Runtime.evaluate"
-                                           :params {:expression lttools-str}})))
-                               ;( js/lttools browser/utils)))
+                             (inject-lttools this))
                        (send this {:id (next-id) :method "Network.setCacheDisabled" :params {:cacheDisabled true}})))
 
 (behavior ::print-messages
           :triggers #{:message}
           :reaction (fn [this m]
-                      ;(println "Message " (:method m) (:id m))
+                      (println "Message " (:method m) (:id m))
                       ;(println "print messages" m)
                       ;(console/log (pr-str m))
                       ))
@@ -226,6 +230,14 @@
                        (when (= "replaced_with_devtools" (-> m :params :reason))
                          (println "Dev tools opened: connection closed"))
                        (object/raise this :close!)))
+
+
+(behavior ::handle-page-reload
+           :triggers #{:Debugger.globalObjectCleared}
+           :reaction (fn [this m]
+                       (println "blobal oject cleared")
+                       ;; When page is refreshed we must inject lttools again
+                       (inject-lttools this)))
 
 
 (behavior ::handle-error
