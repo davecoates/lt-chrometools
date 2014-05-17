@@ -87,6 +87,8 @@
                                             :message
                                             (-> (js/JSON.parse (.-data %))
                                                 (js->clj :keywordize-keys true))))
+    (set! (.-onerror sock) #(object/raise this
+                                          :error %))
     sock))
 
 
@@ -226,14 +228,25 @@
                        (object/raise this :close!)))
 
 
+(behavior ::handle-error
+          :triggers #{:error}
+          :reaction (fn [this event]
+                      ;; When not open...
+                      (when (not= 1 (.-readyState socket))
+                        (object/raise this :close!))))
 
 
 ;;; Reconnect button gives user option to reconnect to a tab
 ;;; that was forcefully disconnected (often due to opening devtools)
+(defui dismiss-button [obj]
+  [:span.tab-close "x"]
+  :click (fn [] (object/raise obj :remove-label)))
+
+
 (defui reconnect-button [label tab]
-  [:button
-   {:style "position: relative; top: 0px;"}
-   (str "Reconnect: " (:title tab))]
+  [:div {:class "reconnect-chrome button"}
+   [:button  (str "Reconnect: " (:title tab))]
+   (dismiss-button label)]
   :click (fn [e]
            (let [client (clients/client! :chrome.client.remote)]
              (connect-tab client tab))))
@@ -260,7 +273,7 @@
                       (let [id (-> @this :tab :id)
                             labels (object/by-tag :reconnect-label)]
                         (doseq [label labels
-                                :when (= (-> @label :tab :id) id)]
+                                :when (and label (= (-> @label :tab :id) id))]
                           (object/raise label :remove-label)))))
 
 
