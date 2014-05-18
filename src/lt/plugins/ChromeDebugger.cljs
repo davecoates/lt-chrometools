@@ -153,7 +153,9 @@
 
 ;; Raw js to send through to load lttools. We use same implementation as
 ;; the remote browser websocket connection.
-(def load-lttools (str "
+;; TODO: This is problematic in that it opens a new connection that shows
+;; in the available connection list (and so could be manually disconnected)
+(defn load-lttools [] (str "
   (function () {
     function loadScript(sScriptSrc) {
       var oHead = document.getElementsByTagName('head')[0];
@@ -171,7 +173,7 @@
 (defn inject-lttools [client]
   (send client {:id (next-id)
               :method "Runtime.evaluate"
-              :params {:expression load-lttools}}
+              :params {:expression (load-lttools)}}
         (fn [r] (println r))
         ))
 
@@ -307,7 +309,7 @@
                                      :editor.eval.html
                                      :editor.eval.css}
                          :tab tab
-                         :name (str "Chrome: " (:title tab))
+                         :name (str "Chrome: " (:url tab))
                          :type :chrome.client.remote })
   (swap! connected-tabs assoc (:id tab) client))
 
@@ -323,7 +325,8 @@
                                                     (nil? (@connected-tabs (:id %))))
                                               tabs))]
                                 ]
-                         :buttons [{:label "cancel"}]})]))
+                         :buttons [{:label "cancel"
+                                    :action #(object/raise client :close!) }]})]))
 
 
 (defn handle-cb [cbid command data]
