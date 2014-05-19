@@ -193,7 +193,7 @@
 (behavior ::print-messages
           :triggers #{:message}
           :reaction (fn [this m]
-                      (println "Message " (:method m) (:id m))
+                      ;(println "Message " (:method m) (:id m))
                       ;(println "print messages" m)
                       ;(console/log (pr-str m))
                       ))
@@ -207,10 +207,30 @@
                         (when (:method m)
                           (object/raise this (keyword (:method m)) m)))))
 
+
+
+(defn load-source-map [client params]
+  "Load source map (sm-filename) for specified url"
+  (let [sm-filename (:sourceMapURL params)
+        url (:url params)
+        base (.replace url #"/[^/]*$" "/")
+        sm-url (str base sm-filename)]
+    (fetch/xhr sm-url {}
+               (fn [d]
+                 (when-let [data (js->clj (js/JSON.parse d) :keywordize-keys true)]
+                   (doseq [source (:sources data)]
+                     (object/update! client [:scripts] assoc-in [source url] params)))))))
+
+
+
 (behavior ::script-parsed
           :triggers #{:Debugger.scriptParsed}
           :reaction (fn [this s]
-                      (let [url (-> s :params :url)]
+                      (let [params (:params s)
+                            source-map-url (:sourceMapURL params)
+                            url (:url params)]
+                        (when source-map-url
+                          (load-source-map this params))
                         (object/update! this [:scripts] assoc-in [(files/basename url) url] (:params s)))))
 
 (behavior ::console-log
