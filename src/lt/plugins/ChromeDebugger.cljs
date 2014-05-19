@@ -429,24 +429,24 @@
 (behavior ::change-live
                   :triggers #{:editor.eval.js.change-live!}
                   :reaction (fn [this msg]
-                              (println msg)
                               (when-let [ed (object/by-id (:cb msg))]
                                 (when (-> msg :data :path)
-                                  ;; TODO: We can't just fetch editor content - eg. CoffeeScript.
-                                  ;; Probably need plugin to pass through full file content
-                                  ;; TODO: You should be able to do partial set script source and
-                                  ;; it just works out diff an applies patch. This never works if
-                                  ;; in closure but otherwise maybe....
-                                  (changelive! this ed (-> msg :data :path)
+                                  ;; Don't really know the best way to do this. If :full-source is
+                                  ;; available use that - this allows things like coffeescript to
+                                  ;; pass through compiled javascript.
+                                  (let [code (-> msg :data :full-source)
+                                        code (if (nil? code)
                                                (js/lt.plugins.watches.watched-range ed nil nil lt.plugins.js/src->watch)
-                                               ;(-> msg :data :code)
+                                               code)]
+                                    (changelive! this ed (-> msg :data :path)
+                                               code
                                                (fn [res]
                                                  (println res)
                                                  (if (:error res)
                                                    (object/raise ed :editor.eval.js.change-live.error (:error res))
                                                    ;;TODO: check for exception, otherwise, assume success
                                                    (object/raise ed :editor.eval.js.change-live.success)))
-                                               identity)))))
+                                                 identity))))))
 
 
 ; TODO: For a connection allow selection of a javascript file. Fetch script source
