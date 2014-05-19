@@ -429,6 +429,7 @@
 (behavior ::change-live
                   :triggers #{:editor.eval.js.change-live!}
                   :reaction (fn [this msg]
+                              (println msg)
                               (when-let [ed (object/by-id (:cb msg))]
                                 (when (-> msg :data :path)
                                   ;; TODO: We can't just fetch editor content - eg. CoffeeScript.
@@ -438,11 +439,13 @@
                                   ;; in closure but otherwise maybe....
                                   (changelive! this ed (-> msg :data :path)
                                                (js/lt.plugins.watches.watched-range ed nil nil lt.plugins.js/src->watch)
+                                               ;(-> msg :data :code)
                                                (fn [res]
                                                  (println res)
-                                                 ;;TODO: check for exception, otherwise, assume success
-                                                 (object/raise ed :editor.eval.js.change-live.success)
-                                                 )
+                                                 (if (:error res)
+                                                   (object/raise ed :editor.eval.js.change-live.error (:error res))
+                                                   ;;TODO: check for exception, otherwise, assume success
+                                                   (object/raise ed :editor.eval.js.change-live.success)))
                                                identity)))))
 
 
