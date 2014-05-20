@@ -1,10 +1,12 @@
 {:+ {:app [(:lt.objs.plugins/load-js "chromedebugger_compiled.js")
             (:lt.objs.plugins/load-css "chromedebugger.css")]
+     :editor.cljs [:lt.plugins.chromedebugger/cljs-result-inspector]
      :chrome.client.remote [:lt.plugins.chromedebugger/connect!
                             :lt.plugins.chromedebugger/close
                             :lt.plugins.chromedebugger/init-tab
                             :lt.plugins.chromedebugger/print-messages
                             :lt.plugins.chromedebugger/js-eval
+                            :lt.plugins.chromedebugger/cljs-exec
                             :lt.plugins.chromedebugger/handle-send!
                             :lt.plugins.chromedebugger/change-live
                             :lt.plugins.chromedebugger/console-log

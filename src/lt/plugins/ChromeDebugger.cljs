@@ -270,6 +270,57 @@
                         (object/raise this :close!))))
 
 
+(def util-inspect (.-inspect (js/require "util")))
+(defn inspect [thing depth]
+  (util-inspect thing false (or depth 5)))
+
+
+(behavior ::cljs-result-inspector
+          :triggers #{:editor.eval.cljs.result.inspector}
+          :reaction (fn [editor res]
+                      (let [meta (:meta res)
+                            loc {:line (dec (:end-line meta)) :ch (:end-column meta)
+                                 :start-line (dec (:line meta))}]
+                          (let [str-result (if (:no-inspect res)
+                                             (if (:result res)
+                                               (:result res)
+                                               "undefined")
+                                             (inspect (:result res)))]
+                            (object/raise editor :editor.result str-result loc {:prefix " = "})))))
+
+
+
+
+(defn eval-cljs [client msg cb]
+  (send client {:id (next-id) :method "Runtime.evaluate" :params {:expression (:code  msg)}}
+        cb))
+
+
+(defn cljs-eval-cb [client msg form r]
+  (let [result (:result r)
+        error? (or (nil? result) (:wasThrown result))
+        error (or (:error result) (:result result))
+        meta (:meta form)
+        meta (assoc meta :result-type "inspector")
+        result (inspector->result client r)
+        result (assoc result :meta meta)]
+    (println result)
+    (if error?
+      (handle-cb (:cb msg) :editor.eval.cljs.exception {:ex error
+                                                        :meta (merge (:meta msg) (:meta form))})
+      (handle-cb (:cb msg)
+                 :editor.eval.cljs.result result))))
+
+(behavior ::cljs-exec
+                  :triggers #{:editor.eval.cljs.exec!}
+                  :reaction (fn [this msg form]
+                              (when-let [ed (object/by-id (:cb msg))]
+                                  (let [info (:data msg)]
+                                    (doseq [form (:results info)]
+                                      (let [cb (partial cljs-eval-cb this msg form)]
+                                        (eval-cljs this form cb)))))))
+
+
 ;;; Reconnect button gives user option to reconnect to a tab
 ;;; that was forcefully disconnected (often due to opening devtools)
 (defui dismiss-button [obj]
