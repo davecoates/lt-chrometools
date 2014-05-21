@@ -369,8 +369,9 @@
   (object/merge! client {:socket (socket client (:webSocketDebuggerUrl tab))
                          :commands #{:editor.eval.cljs.exec
                                      :editor.eval.js
-                                     :editor.eval.html
-                                     :editor.eval.css}
+                                     ;:editor.eval.html
+                                     ;:editor.eval.css
+                                     }
                          :tab tab
                          :name (str "Chrome: " (:url tab))
                          :type :chrome.client.remote })
