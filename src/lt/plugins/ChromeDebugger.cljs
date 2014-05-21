@@ -270,10 +270,6 @@
                         (object/raise this :close!))))
 
 
-(def util-inspect (.-inspect (js/require "util")))
-(defn inspect [thing depth]
-  (util-inspect thing false (or depth 5)))
-
 
 (behavior ::cljs-result-inspector
           :triggers #{:editor.eval.cljs.result.inspector}
@@ -281,13 +277,10 @@
                       (let [meta (:meta res)
                             loc {:line (dec (:end-line meta)) :ch (:end-column meta)
                                  :start-line (dec (:line meta))}]
-                          (let [str-result (if (:no-inspect res)
-                                             (if (:result res)
-                                               (:result res)
-                                               "undefined")
-                                             (inspect (:result res)))]
+                          (let [str-result (if (:result res)
+                                             (:result res)
+                                             "undefined")]
                             (object/raise editor :editor.result str-result loc {:prefix " = "})))))
-
 
 
 
@@ -299,12 +292,11 @@
 (defn cljs-eval-cb [client msg form r]
   (let [result (:result r)
         error? (or (nil? result) (:wasThrown result))
-        error (or (:error result) (:result result))
+        error (or (:error result) (-> result :result :description))
         meta (:meta form)
         meta (assoc meta :result-type "inspector")
         result (inspector->result client r)
-        result (assoc result :meta meta)]
-    (println result)
+        result (assoc result :meta meta :no-inspect true)]
     (if error?
       (handle-cb (:cb msg) :editor.eval.cljs.exception {:ex error
                                                         :meta (merge (:meta msg) (:meta form))})
