@@ -17,6 +17,11 @@
                             :lt.plugins.chromedebugger/script-parsed
                             :lt.plugins.chromedebugger/handle-error
                             :lt.plugins.chromedebugger/handle-page-reload
+                            :lt.plugins.chromedebugger.debugger/remove-breakpoint
                             ]
+     :editor.javascript [:lt.plugins.chromedebugger.debugger/toggle-breakpoint
+                         :lt.plugins.chromedebugger.debugger/add-breakpoint-marker
+                         :lt.plugins.chromedebugger.debugger/remove-breakpoint-marker
+                         ]
      :reconnect-label [:lt.plugins.chromedebugger/on-remove-reconnect-label]
      }}

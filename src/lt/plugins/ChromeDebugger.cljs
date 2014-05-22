@@ -193,10 +193,11 @@
 (behavior ::print-messages
           :triggers #{:message}
           :reaction (fn [this m]
-                      ;(println "Message " (:method m) (:id m))
+                      (println "Message " (:method m) (:id m))
                       ;(println "print messages" m)
                       ;(console/log (pr-str m))
                       ))
+
 (behavior ::handle-message
           :triggers #{:message}
           :reaction (fn [this m]
