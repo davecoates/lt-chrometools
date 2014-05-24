@@ -12,6 +12,8 @@
 
 
 
+
+
 ;;; Breakpoint markers (shown in editor)
 
 (defn make-marker []
@@ -110,7 +112,9 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(def breakpoints (atom {}))
 
+@breakpoints
 
 ;;; Behaviors
 
@@ -144,6 +148,7 @@
                                                 (object/raise this :breakpoint-removed
                                                               {:path path
                                                                :pos pos})
+                                                (swap! breakpoints dissoc (-> (get-in @client [:breakpoints path (:line pos)]) :breakpointId))
                                                 (object/update! client [:breakpoints path] dissoc (:line pos))
                                                 (println "removed!!!!" r)))
                            (set-breakpoint client path pos
@@ -155,11 +160,35 @@
                                                                {:breakpoint result
                                                                 :path path
                                                                 :pos pos})
+                                                 (swap! breakpoints assoc (:breakpointId result) {:path path :pos pos :breakpoint result :origin this})
                                                  (object/update! client [:breakpoints] assoc-in [path (:line pos)] result))
                                                (object/raise this :breakpoint-set-error
                                                              {:path path
                                                               :pos pos
                                                               :message result}))))))))
+
+(defn jump-to-bp
+  [bp-id]
+  "Jump to editor / line where breakpoint identified by bp-id is set"
+  (let [breakpoint (get @breakpoints bp-id)
+        origin (:origin breakpoint)]
+    (when breakpoint
+      (let [cm (ed/->cm-ed origin)]
+        (.addLineClass cm (-> breakpoint :pos :line dec) "background" "breakpoint-paused")
+        (object/raise origin :focus!)))))
+
+
+(behavior ::debugger-paused
+          :triggers #{:Debugger.paused}
+          :reaction (fn [this s]
+                      (let [params (:params s)
+                            reason (:reason params)
+                            breakpoint (-> params :hitBreakpoints first)
+                            call-frames (:callFrames params)]
+                        (when breakpoint
+                          (jump-to-bp breakpoint))
+                      s
+                      )))
 
 
 ;;; Commands

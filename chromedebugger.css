@@ -18,3 +18,6 @@
 .reconnect-chrome span {
 	padding: 0 5px;
 }
+.breakpoint-paused {
+  background-color: red;
+}
