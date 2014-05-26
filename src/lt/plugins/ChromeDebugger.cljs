@@ -211,13 +211,13 @@
 
 (defn is-data-uri? [uri]
   (let [data-uri-prefix "data:application/json"]
-        data-uri? (= data-uri-prefix (.substr  uri 0 (.-length data-uri-prefix)))))
+    (= data-uri-prefix (.substr  uri 0 (.-length data-uri-prefix)))))
 
 
 (defn store-source-map
   [client url params sm]
   (doseq [source (:sources sm)]
-    (object/update! client [:scripts] assoc-in [source url] params)))
+    (object/update! client [:scripts] assoc-in [(files/basename source) url] params)))
 
 
 (defn load-source-map [client params]
@@ -226,10 +226,10 @@
         url (:url params)
         base (.replace url #"/[^/]*$" "/")
         sm-url (str base sm-filename)]
-    (if (is-data-uri? sm-url)
+    (if (is-data-uri? sm-filename)
       ;; Assuming string will be base64 encoded
       ;; eg. data:application/json;base64,...
-      (when-let [data (js/JSON.parse (js/atob (second (.split sm-url ",")) :keywordize-keys true))]
+      (let [data (js->clj (js/JSON.parse (js/atob (second (.split sm-url ",")))) :keywordize-keys true)]
         (store-source-map client url params data))
       (fetch/xhr sm-url {}
                (fn [d]
