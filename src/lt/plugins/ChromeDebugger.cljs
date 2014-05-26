@@ -209,6 +209,16 @@
                           (object/raise this (keyword (:method m)) m)))))
 
 
+(defn is-data-uri? [uri]
+  (let [data-uri-prefix "data:application/json"]
+        data-uri? (= data-uri-prefix (.substr  uri 0 (.-length data-uri-prefix)))))
+
+
+(defn store-source-map
+  [client url params sm]
+  (doseq [source (:sources sm)]
+    (object/update! client [:scripts] assoc-in [source url] params)))
+
 
 (defn load-source-map [client params]
   "Load source map (sm-filename) for specified url"
@@ -216,11 +226,15 @@
         url (:url params)
         base (.replace url #"/[^/]*$" "/")
         sm-url (str base sm-filename)]
-    (fetch/xhr sm-url {}
+    (if (is-data-uri? sm-url)
+      ;; Assuming string will be base64 encoded
+      ;; eg. data:application/json;base64,...
+      (when-let [data (js/JSON.parse (js/atob (second (.split sm-url ",")) :keywordize-keys true))]
+        (store-source-map client url params data))
+      (fetch/xhr sm-url {}
                (fn [d]
                  (when-let [data (js->clj (js/JSON.parse d) :keywordize-keys true)]
-                   (doseq [source (:sources data)]
-                     (object/update! client [:scripts] assoc-in [source url] params)))))))
+                   (store-source-map client url params data)))))))
 
 
 
@@ -258,7 +272,6 @@
 (behavior ::handle-page-reload
            :triggers #{:Debugger.globalObjectCleared}
            :reaction (fn [this m]
-                       (println "blobal oject cleared")
                        ;; When page is refreshed we must inject lttools again
                        (inject-lttools this)))
 
@@ -593,6 +606,7 @@
           :when (or (not (object/->content obj))
                     (not (dom/parents (object/->content obj) :body)))]
     (object/destroy! obj)))
+
 
 (behavior ::clean-inspectors-timer
           :triggers #{:init}
