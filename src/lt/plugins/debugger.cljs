@@ -12,6 +12,8 @@
 
 
 
+(def source-map (js/require "source-map"))
+(def SourceMapConsumer (.-SourceMapConsumer source-map))
 
 
 ;;; Breakpoint markers (shown in editor)
@@ -48,10 +50,16 @@
      (add-breakpoints-gutter ed)
      (.setGutterMarker cm line "breakpoints" (if marked? nil (make))))))
 
+(defn generated-position
+  [path source-pos sm]
+  (js->clj (.generatedPositionFor
+            (SourceMapConsumer. (clj->js sm))
+            #js {:source path :line (:line source-pos) :column (:ch source-pos)})))
 
+(let [{:keys [:line :column] } {:line 5 :column 10}]
+  [line column])
 
 ;;; Set and remove breakpoints in Chrome
-
 (defn set-breakpoint
   "Set breakpoint on client for script matching path at position pos
 
@@ -60,10 +68,18 @@
   [client path pos cb]
   (if-let [s (chrome/find-script client path)]
     (let [id (-> s vals first :scriptId)
-          location {:lineNumber (:line pos)
-                  :scriptId id}]
+          sm (-> s vals first :sourceMap)
+          location (if sm
+                     (let [gen-pos (generated-position path pos sm)
+                           line (dec (.-line gen-pos))
+                           column (.-column gen-pos)
+                           ]
+                       {:lineNumber line :columnNumber column :scriptId id})
+                     {:lineNumber (:line pos) :scriptId id})
+          ]
       (chrome/script-exists? client id
                              (fn [exists?]
+                               (println "exists?")
                                (if-not exists?
                                  (do (chrome/remove-script! client path id) (set-breakpoint this path pos))
                                  (chrome/send client {:id (chrome/next-id)
@@ -103,11 +119,11 @@
   (when-not (breakpoints-gutter? ed)
     (ed/add-gutter ed "breakpoints" 5)))
 
+
 (defn remove-breakpoints-gutter
   "Remove breakpoints gutter from specified editor"
   [ed]
   (ed/remove-gutter ed "breakpoints"))
-
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

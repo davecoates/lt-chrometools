@@ -216,8 +216,9 @@
 
 (defn store-source-map
   [client url params sm]
-  (doseq [source (:sources sm)]
-    (object/update! client [:scripts] assoc-in [(files/basename source) url] params)))
+  (let [params (assoc params :sourceMap sm)]
+    (doseq [source (:sources sm)]
+      (object/update! client [:scripts] assoc-in [(files/basename source) url] params))))
 
 
 (defn load-source-map [client params]

@@ -24,5 +24,9 @@
                          :lt.plugins.chromedebugger.debugger/add-breakpoint-marker
                          :lt.plugins.chromedebugger.debugger/remove-breakpoint-marker
                          ]
+     :editor.coffeescript [:lt.plugins.chromedebugger.debugger/toggle-breakpoint
+                         :lt.plugins.chromedebugger.debugger/add-breakpoint-marker
+                         :lt.plugins.chromedebugger.debugger/remove-breakpoint-marker
+                         ]
      :reconnect-label [:lt.plugins.chromedebugger/on-remove-reconnect-label]
      }}
