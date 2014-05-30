@@ -23,10 +23,12 @@
      :editor.javascript [:lt.plugins.chromedebugger.debugger/toggle-breakpoint
                          :lt.plugins.chromedebugger.debugger/add-breakpoint-marker
                          :lt.plugins.chromedebugger.debugger/remove-breakpoint-marker
+                         :lt.plugins.chromedebugger.debugger/debugger-resumed
                          ]
      :editor.coffeescript [:lt.plugins.chromedebugger.debugger/toggle-breakpoint
-                         :lt.plugins.chromedebugger.debugger/add-breakpoint-marker
-                         :lt.plugins.chromedebugger.debugger/remove-breakpoint-marker
+                           :lt.plugins.chromedebugger.debugger/add-breakpoint-marker
+                           :lt.plugins.chromedebugger.debugger/remove-breakpoint-marker
+                           :lt.plugins.chromedebugger.debugger/debugger-resumed
                          ]
      :reconnect-label [:lt.plugins.chromedebugger/on-remove-reconnect-label]
      }}

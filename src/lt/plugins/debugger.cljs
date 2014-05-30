@@ -6,13 +6,14 @@
    [lt.objs.editor.pool       :as pool]
    [lt.objs.editor            :as ed]
    [lt.objs.eval              :as eval]
+   [lt.objs.plugins :as plugins]
    [clojure.string            :as string]
    [lt.plugins.chromedebugger :as chrome])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
 
 
-(def source-map (js/require "source-map"))
+(def source-map (js/require (plugins/local-module "ChromeDebugger" "source-map")))
 (def SourceMapConsumer (.-SourceMapConsumer source-map))
 
 
@@ -56,8 +57,6 @@
             (SourceMapConsumer. (clj->js sm))
             #js {:source path :line (:line source-pos) :column (:ch source-pos)})))
 
-(let [{:keys [:line :column] } {:line 5 :column 10}]
-  [line column])
 
 ;;; Set and remove breakpoints in Chrome
 (defn set-breakpoint
@@ -189,9 +188,12 @@
   (let [breakpoint (get @breakpoints bp-id)
         origin (:origin breakpoint)]
     (when breakpoint
-      (let [cm (ed/->cm-ed origin)]
-        (.addLineClass cm (-> breakpoint :pos :line dec) "background" "breakpoint-paused")
+      (let [cm (ed/->cm-ed origin)
+            line (-> breakpoint :pos :line dec)]
+        (object/update! origin [:chrome-debugger] assoc :paused-at line)
+        (.addLineClass cm line "background" "breakpoint-paused")
         (object/raise origin :focus!)))))
+
 
 
 (behavior ::debugger-paused
@@ -201,10 +203,19 @@
                             reason (:reason params)
                             breakpoint (-> params :hitBreakpoints first)
                             call-frames (:callFrames params)]
+                        (println "paused!!!" breakpoint)
                         (when breakpoint
                           (jump-to-bp breakpoint))
                       s
                       )))
+
+
+(behavior ::debugger-resumed
+           :triggers #{:debugger-resumed}
+           :reaction (fn [this]
+                       (let [line (get-in @this [:chrome-debugger :paused-at])
+                             cm (ed/->cm-ed this)]
+                       (.removeLineClass cm line "background" "breakpoint-paused"))))
 
 
 ;;; Commands
@@ -215,3 +226,15 @@
                      (let [editor (pool/last-active)
                            pos (ed/->cursor editor)]
                        (object/raise editor :toggle-breakpoint!)))})
+
+
+
+(cmd/command {:command :resume-debugger
+              :desc "Chrome: Debugger - Resume"
+              :exec (fn []
+                     (let [editor (pool/last-active)
+                           client (eval/get-client! {:command :editor.eval.js :origin editor})]
+                       (chrome/send client {:id (chrome/next-id)
+                                               :method "Debugger.resume"}
+                                       (fn [r]
+                                         (object/raise editor :debugger-resumed)))))})
