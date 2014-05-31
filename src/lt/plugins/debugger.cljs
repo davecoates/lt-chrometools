@@ -195,6 +195,10 @@
         (object/raise origin :focus!)))))
 
 
+(defn get-scripts
+  [client id]
+  "Get scripts from client that have scriptId of id"
+  (for [[_ vs] (:scripts @client) [_ vvs] vs :when (= (:scriptId vvs) id)] vvs))
 
 (behavior ::debugger-paused
           :triggers #{:Debugger.paused}
@@ -202,12 +206,14 @@
                       (let [params (:params s)
                             reason (:reason params)
                             breakpoint (-> params :hitBreakpoints first)
-                            call-frames (:callFrames params)]
+                            call-frames (:callFrames params)
+                            call-frame (first call-frames)
+                            loc (:location call-frame)
+                            ]
+                        ;(.log js/console (clj->js (get-script this (:scriptId loc))))
                         (println "paused!!!" breakpoint)
                         (when breakpoint
-                          (jump-to-bp breakpoint))
-                      s
-                      )))
+                          (jump-to-bp breakpoint)))))
 
 
 (behavior ::debugger-resumed
@@ -238,3 +244,14 @@
                                                :method "Debugger.resume"}
                                        (fn [r]
                                          (object/raise editor :debugger-resumed)))))})
+
+
+(cmd/command {:command :pause-debugger
+              :desc "Chrome: Debugger - Pause"
+              :exec (fn []
+                     (let [editor (pool/last-active)
+                           client (eval/get-client! {:command :editor.eval.js :origin editor})]
+                       (chrome/send client {:id (chrome/next-id)
+                                               :method "Debugger.pause"}
+                                       (fn [r]
+                                         (println r)))))})

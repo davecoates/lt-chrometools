@@ -1302,12 +1302,81 @@ return lt.object.raise.call(null,origin,new cljs.core.Keyword(null,"focus!","foc
 {return null;
 }
 });
-lt.plugins.chromedebugger.debugger$.__BEH__debugger_paused = (function __BEH__debugger_paused(this$,s){var params = new cljs.core.Keyword(null,"params","params",4313443576).cljs$core$IFn$_invoke$arity$1(s);var reason = new cljs.core.Keyword(null,"reason","reason",4373906870).cljs$core$IFn$_invoke$arity$1(params);var breakpoint = cljs.core.first.call(null,new cljs.core.Keyword(null,"hitBreakpoints","hitBreakpoints",929618049).cljs$core$IFn$_invoke$arity$1(params));var call_frames = new cljs.core.Keyword(null,"callFrames","callFrames",2227904534).cljs$core$IFn$_invoke$arity$1(params);cljs.core.println.call(null,"paused!!!",breakpoint);
-if(cljs.core.truth_(breakpoint))
-{lt.plugins.chromedebugger.debugger$.jump_to_bp.call(null,breakpoint);
+lt.plugins.chromedebugger.debugger$.get_scripts = (function get_scripts(client,id){var iter__7081__auto__ = (function iter__8982(s__8983){return (new cljs.core.LazySeq(null,(function (){var s__8983__$1 = s__8983;while(true){
+var temp__4092__auto__ = cljs.core.seq.call(null,s__8983__$1);if(temp__4092__auto__)
+{var xs__4579__auto__ = temp__4092__auto__;var vec__8993 = cljs.core.first.call(null,xs__4579__auto__);var _ = cljs.core.nth.call(null,vec__8993,0,null);var vs = cljs.core.nth.call(null,vec__8993,1,null);var iterys__7077__auto__ = ((function (s__8983__$1,vec__8993,_,vs,xs__4579__auto__,temp__4092__auto__){
+return (function iter__8984(s__8985){return (new cljs.core.LazySeq(null,((function (s__8983__$1,vec__8993,_,vs,xs__4579__auto__,temp__4092__auto__){
+return (function (){var s__8985__$1 = s__8985;while(true){
+var temp__4092__auto____$1 = cljs.core.seq.call(null,s__8985__$1);if(temp__4092__auto____$1)
+{var s__8985__$2 = temp__4092__auto____$1;if(cljs.core.chunked_seq_QMARK_.call(null,s__8985__$2))
+{var c__7079__auto__ = cljs.core.chunk_first.call(null,s__8985__$2);var size__7080__auto__ = cljs.core.count.call(null,c__7079__auto__);var b__8987 = cljs.core.chunk_buffer.call(null,size__7080__auto__);if((function (){var i__8986 = 0;while(true){
+if((i__8986 < size__7080__auto__))
+{var vec__8996 = cljs.core._nth.call(null,c__7079__auto__,i__8986);var ___$1 = cljs.core.nth.call(null,vec__8996,0,null);var vvs = cljs.core.nth.call(null,vec__8996,1,null);if(cljs.core._EQ_.call(null,new cljs.core.Keyword(null,"scriptId","scriptId",606324408).cljs$core$IFn$_invoke$arity$1(vvs),id))
+{cljs.core.chunk_append.call(null,b__8987,vvs);
+{
+var G__8998 = (i__8986 + 1);
+i__8986 = G__8998;
+continue;
+}
 } else
-{}
-return s;
+{{
+var G__8999 = (i__8986 + 1);
+i__8986 = G__8999;
+continue;
+}
+}
+} else
+{return true;
+}
+break;
+}
+})())
+{return cljs.core.chunk_cons.call(null,cljs.core.chunk.call(null,b__8987),iter__8984.call(null,cljs.core.chunk_rest.call(null,s__8985__$2)));
+} else
+{return cljs.core.chunk_cons.call(null,cljs.core.chunk.call(null,b__8987),null);
+}
+} else
+{var vec__8997 = cljs.core.first.call(null,s__8985__$2);var ___$1 = cljs.core.nth.call(null,vec__8997,0,null);var vvs = cljs.core.nth.call(null,vec__8997,1,null);if(cljs.core._EQ_.call(null,new cljs.core.Keyword(null,"scriptId","scriptId",606324408).cljs$core$IFn$_invoke$arity$1(vvs),id))
+{return cljs.core.cons.call(null,vvs,iter__8984.call(null,cljs.core.rest.call(null,s__8985__$2)));
+} else
+{{
+var G__9000 = cljs.core.rest.call(null,s__8985__$2);
+s__8985__$1 = G__9000;
+continue;
+}
+}
+}
+} else
+{return null;
+}
+break;
+}
+});})(s__8983__$1,vec__8993,_,vs,xs__4579__auto__,temp__4092__auto__))
+,null,null));
+});})(s__8983__$1,vec__8993,_,vs,xs__4579__auto__,temp__4092__auto__))
+;var fs__7078__auto__ = cljs.core.seq.call(null,iterys__7077__auto__.call(null,vs));if(fs__7078__auto__)
+{return cljs.core.concat.call(null,fs__7078__auto__,iter__8982.call(null,cljs.core.rest.call(null,s__8983__$1)));
+} else
+{{
+var G__9001 = cljs.core.rest.call(null,s__8983__$1);
+s__8983__$1 = G__9001;
+continue;
+}
+}
+} else
+{return null;
+}
+break;
+}
+}),null,null));
+});return iter__7081__auto__.call(null,new cljs.core.Keyword(null,"scripts","scripts",2940419194).cljs$core$IFn$_invoke$arity$1(cljs.core.deref.call(null,client)));
+});
+lt.plugins.chromedebugger.debugger$.__BEH__debugger_paused = (function __BEH__debugger_paused(this$,s){var params = new cljs.core.Keyword(null,"params","params",4313443576).cljs$core$IFn$_invoke$arity$1(s);var reason = new cljs.core.Keyword(null,"reason","reason",4373906870).cljs$core$IFn$_invoke$arity$1(params);var breakpoint = cljs.core.first.call(null,new cljs.core.Keyword(null,"hitBreakpoints","hitBreakpoints",929618049).cljs$core$IFn$_invoke$arity$1(params));var call_frames = new cljs.core.Keyword(null,"callFrames","callFrames",2227904534).cljs$core$IFn$_invoke$arity$1(params);var call_frame = cljs.core.first.call(null,call_frames);var loc = new cljs.core.Keyword(null,"location","location",2914947879).cljs$core$IFn$_invoke$arity$1(call_frame);cljs.core.println.call(null,"paused!!!",breakpoint);
+if(cljs.core.truth_(breakpoint))
+{return lt.plugins.chromedebugger.debugger$.jump_to_bp.call(null,breakpoint);
+} else
+{return null;
+}
 });
 lt.object.behavior_STAR_.call(null,new cljs.core.Keyword("lt.plugins.chromedebugger.debugger","debugger-paused","lt.plugins.chromedebugger.debugger/debugger-paused",3540433732),new cljs.core.Keyword(null,"reaction","reaction",4441361819),lt.plugins.chromedebugger.debugger$.__BEH__debugger_paused,new cljs.core.Keyword(null,"triggers","triggers",2516997421),new cljs.core.PersistentHashSet(null, new cljs.core.PersistentArrayMap(null, 1, [new cljs.core.Keyword(null,"Debugger.paused","Debugger.paused",1114783469),null], null), null));
 lt.plugins.chromedebugger.debugger$.__BEH__debugger_resumed = (function __BEH__debugger_resumed(this$){var line = cljs.core.get_in.call(null,cljs.core.deref.call(null,this$),new cljs.core.PersistentVector(null, 2, 5, cljs.core.PersistentVector.EMPTY_NODE, [new cljs.core.Keyword(null,"chrome-debugger","chrome-debugger",1103806854),new cljs.core.Keyword(null,"paused-at","paused-at",1843746980)], null));var cm = lt.objs.editor.__GT_cm_ed.call(null,this$);return cm.removeLineClass(line,"background","breakpoint-paused");
@@ -1317,6 +1386,11 @@ lt.objs.sidebar.command.command.call(null,new cljs.core.PersistentArrayMap(null,
 })], null));
 lt.objs.sidebar.command.command.call(null,new cljs.core.PersistentArrayMap(null, 3, [new cljs.core.Keyword(null,"command","command",1964298941),new cljs.core.Keyword(null,"resume-debugger","resume-debugger",4240016691),new cljs.core.Keyword(null,"desc","desc",1016984067),"Chrome: Debugger - Resume",new cljs.core.Keyword(null,"exec","exec",1017031683),(function (){var editor = lt.objs.editor.pool.last_active.call(null);var client = lt.objs.eval.get_client_BANG_.call(null,new cljs.core.PersistentArrayMap(null, 2, [new cljs.core.Keyword(null,"command","command",1964298941),new cljs.core.Keyword(null,"editor.eval.js","editor.eval.js",1847417804),new cljs.core.Keyword(null,"origin","origin",4300251800),editor], null));return lt.plugins.chromedebugger.send.call(null,client,new cljs.core.PersistentArrayMap(null, 2, [new cljs.core.Keyword(null,"id","id",1013907597),lt.plugins.chromedebugger.next_id.call(null),new cljs.core.Keyword(null,"method","method",4231316563),"Debugger.resume"], null),((function (editor,client){
 return (function (r){return lt.object.raise.call(null,editor,new cljs.core.Keyword(null,"debugger-resumed","debugger-resumed",833902493));
+});})(editor,client))
+);
+})], null));
+lt.objs.sidebar.command.command.call(null,new cljs.core.PersistentArrayMap(null, 3, [new cljs.core.Keyword(null,"command","command",1964298941),new cljs.core.Keyword(null,"pause-debugger","pause-debugger",1706137994),new cljs.core.Keyword(null,"desc","desc",1016984067),"Chrome: Debugger - Pause",new cljs.core.Keyword(null,"exec","exec",1017031683),(function (){var editor = lt.objs.editor.pool.last_active.call(null);var client = lt.objs.eval.get_client_BANG_.call(null,new cljs.core.PersistentArrayMap(null, 2, [new cljs.core.Keyword(null,"command","command",1964298941),new cljs.core.Keyword(null,"editor.eval.js","editor.eval.js",1847417804),new cljs.core.Keyword(null,"origin","origin",4300251800),editor], null));return lt.plugins.chromedebugger.send.call(null,client,new cljs.core.PersistentArrayMap(null, 2, [new cljs.core.Keyword(null,"id","id",1013907597),lt.plugins.chromedebugger.next_id.call(null),new cljs.core.Keyword(null,"method","method",4231316563),"Debugger.pause"], null),((function (editor,client){
+return (function (r){return cljs.core.println.call(null,r);
 });})(editor,client))
 );
 })], null));
