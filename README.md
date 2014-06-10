@@ -27,7 +27,7 @@ Add a new connection and choose *Chrome (Remote Debugging Protocol)*. You will t
   - [ ] ClojureScript
 - [ ] - Debugging
   - [x] Add / remove breakpoints
-  - [ ] Set breakpoints from source mapped files
+  - [X] Set breakpoints from source mapped files
   - [ ] Eval in paused stackframe
   - [ ] Browse stack frame
   - ...
