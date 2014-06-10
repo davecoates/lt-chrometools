@@ -7,6 +7,7 @@
    [lt.objs.editor            :as ed]
    [lt.objs.eval              :as eval]
    [lt.objs.plugins :as plugins]
+   [lt.util.dom :as dom]
    [clojure.string            :as string]
    [lt.plugins.chromedebugger :as chrome])
   (:require-macros [lt.macros :refer [behavior defui]]))
@@ -200,6 +201,17 @@
   "Get scripts from client that have scriptId of id"
   (for [[_ vs] (:scripts @client) [_ vvs] vs :when (= (:scriptId vvs) id)] vvs))
 
+(defui debug-panel-resume [editor client]
+  [:button {:class "resume"} "▶"]
+   :click (fn [] (cmd/exec! :resume-debugger editor client)))
+
+(defui debug-panel [editor client]
+  [:div {:class "debug-panel"}
+   [:h1 {} "Debugger"]
+   [:div {:class "controls"}
+    (debug-panel-resume editor client)]
+   [:div {:class "scope-variables"}]])
+
 (behavior ::debugger-paused
           :triggers #{:Debugger.paused}
           :reaction (fn [this s]
@@ -207,11 +219,17 @@
                             reason (:reason params)
                             breakpoint (-> params :hitBreakpoints first)
                             call-frames (:callFrames params)
-                            call-frame (first call-frames)
-                            loc (:location call-frame)
+                            ; TODO: This isn't necessarily true (could have changed tabs)
+                            editor (pool/last-active)
                             ]
                         ;(.log js/console (clj->js (get-script this (:scriptId loc))))
-                        (println "paused!!!" breakpoint)
+                        (when-let [p (dom/$ ".debug-panel")] (dom/remove p))
+                        (let [panel (debug-panel editor this)
+                              scope-chain (-> call-frames first :scopeChain js->clj)]
+                          (dom/prepend (object/->content editor) panel)
+                          (doseq [scope scope-chain]
+                              (dom/append panel
+                                           (:result (chrome/inspector->result this {:result {:result (:object scope)}})))))
                         (when breakpoint
                           (jump-to-bp breakpoint)))))
 
@@ -237,13 +255,15 @@
 
 (cmd/command {:command :resume-debugger
               :desc "Chrome: Debugger - Resume"
-              :exec (fn []
-                     (let [editor (pool/last-active)
-                           client (eval/get-client! {:command :editor.eval.js :origin editor})]
+              :exec (fn
+                      ([]  (let [editor (pool/last-active)
+                                 client (eval/get-client! {:command :editor.eval.js :origin editor})]
+                             (cmd/exec! :resume-debugger editor client)))
+                      ([editor client]
                        (chrome/send client {:id (chrome/next-id)
-                                               :method "Debugger.resume"}
-                                       (fn [r]
-                                         (object/raise editor :debugger-resumed)))))})
+                                            :method "Debugger.resume"}
+                                    (fn [r]
+                                      (object/raise editor :debugger-resumed)))))})
 
 
 (cmd/command {:command :pause-debugger

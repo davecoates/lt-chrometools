@@ -21,3 +21,27 @@
 .breakpoint-paused {
   background-color: red;
 }
+.debug-panel {
+  position: absolute;
+  right: 0px;
+  top: 0px;
+  width: auto;
+  min-width: 300px;
+  max-width: 50%;
+  padding: 10px;
+  background-color: black;
+  border-radius: 10px;
+  z-index:99;
+  transition: all 1s ease;
+  -webkit-transition: all 1s ease;
+}
+.debug-panel h1 {
+  float: left;
+}
+.debug-panel .controls {
+  float: left;
+  margin-left: 20px;
+}
+.debug-panel .scope-variables {
+  clear: both;
+}
