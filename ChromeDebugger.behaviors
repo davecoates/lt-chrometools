@@ -19,6 +19,8 @@
                             :lt.plugins.chromedebugger/handle-page-reload
                             :lt.plugins.chromedebugger.debugger/remove-breakpoint
                             :lt.plugins.chromedebugger.debugger/debugger-paused
+                            :lt.plugins.chromedebugger.debugger/create-panel-on-connect
+                            :lt.plugins.chromedebugger.debugger/remove-panel-on-disconnect
                             ]
      :editor.javascript [:lt.plugins.chromedebugger.debugger/toggle-breakpoint
                          :lt.plugins.chromedebugger.debugger/add-breakpoint-marker

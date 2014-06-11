@@ -181,7 +181,6 @@
 (behavior ::init-tab
            :triggers #{:connect}
            :reaction (fn [this]
-                       (println this)
                        ;; Copy lttools object from browser utils. This gives us
                        ;; things like JS watches.
                        (send this {:id (next-id) :method "Runtime.enable"})
@@ -193,7 +192,7 @@
 (behavior ::print-messages
           :triggers #{:message}
           :reaction (fn [this m]
-                      (println "Message " (:method m) (:id m))
+                     ; (println "Message " (:method m) (:id m))
                       ;(println "print messages" m)
                       ;(console/log (pr-str m))
                       ))

@@ -8,6 +8,7 @@
    [lt.objs.eval              :as eval]
    [lt.objs.plugins :as plugins]
    [lt.util.dom :as dom]
+   [crate.binding :refer [bound subatom]]
    [clojure.string            :as string]
    [lt.plugins.chromedebugger :as chrome])
   (:require-macros [lt.macros :refer [behavior defui]]))
@@ -130,7 +131,6 @@
 
 (def breakpoints (atom {}))
 
-@breakpoints
 
 ;;; Behaviors
 
@@ -201,16 +201,58 @@
   "Get scripts from client that have scriptId of id"
   (for [[_ vs] (:scripts @client) [_ vvs] vs :when (= (:scriptId vvs) id)] vvs))
 
-(defui debug-panel-resume [editor client]
-  [:button {:class "resume"} "▶"]
+
+
+;;; We have client which has a key :debug-panel which is a ::debug-panel
+;;; object. This object creates the HTML and sets up bindings to update scope
+;;; variables etc - they are bound to keys on the object (eg. :scope-variables)
+
+(object/object* ::debug-panel
+                :tags #{:debug.panel}
+                :init (fn [this client editor]
+                        (object/merge! this {:client client :debugger {:paused? false}})
+                        (dom/prepend (object/->content editor) (debug-panel this))))
+
+;(object/destroy! (first (object/by-tag :debug.panel)))
+;(def obj (object/create ::debug-panel {} (pool/last-active)))
+
+;(do (object/update! obj [:debugger] assoc :paused? true) nil)
+
+(defui debug-panel-resume [this]
+  [:button {:class "resume"} (bound this #(if (-> % :debugger :paused?) "▶" "="))]
    :click (fn [] (cmd/exec! :resume-debugger editor client)))
 
-(defui debug-panel [editor client]
+(defn ->scope-variables
+  [vars]
+  (when vars
+    (for [var vars]
+      (:result (chrome/inspector->result this {:result {:result (:object var)}})))))
+
+;(:debug-panel @(clients/by-id 300))
+
+
+(defui debug-panel [this]
   [:div {:class "debug-panel"}
    [:h1 {} "Debugger"]
    [:div {:class "controls"}
-    (debug-panel-resume editor client)]
-   [:div {:class "scope-variables"}]])
+    (debug-panel-resume this)]
+   [:div {:class "scope-variables"} (bound (subatom this :scope-variables) ->scope-variables)]])
+
+
+;; When a client connects we want to create a debug panel we can use to control
+;; it (eg. pause & resume debugger)
+(behavior ::create-panel-on-connect
+          :triggers #{:connect}
+          :reaction (fn [this]
+                      (object/merge! this {:debug-panel (object/create ::debug-panel this (pool/last-active))})))
+
+;; When client disconnects we need to remove the debug panel
+(behavior ::remove-panel-on-disconnect
+          :triggers #{:disconnect}
+          :reaction (fn [this]
+                      (when-let [panel (:debug-panel @this)]
+                        (object/destroy! panel))))
+
 
 (behavior ::debugger-paused
           :triggers #{:Debugger.paused}
@@ -223,13 +265,15 @@
                             editor (pool/last-active)
                             ]
                         ;(.log js/console (clj->js (get-script this (:scriptId loc))))
-                        (when-let [p (dom/$ ".debug-panel")] (dom/remove p))
-                        (let [panel (debug-panel editor this)
-                              scope-chain (-> call-frames first :scopeChain js->clj)]
-                          (dom/prepend (object/->content editor) panel)
-                          (doseq [scope scope-chain]
-                              (dom/append panel
-                                           (:result (chrome/inspector->result this {:result {:result (:object scope)}})))))
+                     ;   (when-let [p (dom/$ ".debug-panel")] (dom/remove p))
+                        (let [;panel (debug-panel editor this)
+                              scope-chain (-> call-frames first :scopeChain js->clj)
+                              panel (:debug-panel @this)
+                              ]
+                          (object/merge! panel {:scope-variables scope-chain}))
+                        ;  (doseq [scope scope-chain]
+                         ;     (dom/append panel
+                          ;                 (:result (chrome/inspector->result this {:result {:result (:object scope)}})))))
                         (when breakpoint
                           (jump-to-bp breakpoint)))))
 
