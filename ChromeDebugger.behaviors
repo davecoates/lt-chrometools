@@ -22,6 +22,9 @@
                             :lt.plugins.chromedebugger.debugger/create-panel-on-connect
                             :lt.plugins.chromedebugger.debugger/remove-panel-on-disconnect
                             ]
+     :debug.panel [
+                   :lt.plugins.chromedebugger.debugger/debug-panel-destroyed
+     ]
      :editor.javascript [:lt.plugins.chromedebugger.debugger/toggle-breakpoint
                          :lt.plugins.chromedebugger.debugger/add-breakpoint-marker
                          :lt.plugins.chromedebugger.debugger/remove-breakpoint-marker

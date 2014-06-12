@@ -227,12 +227,38 @@
               (cmd/exec! c editor client))))
 
 (defn ->scope-variables
-  [vars]
+  [panel vars]
   (when vars
     (for [var vars]
-      (:result (chrome/inspector->result this {:result {:result (:object var)}})))))
+      (do
+      (println var)
+      (:result (chrome/inspector->result (:client @panel) {:result {:result (:object var)}}))))))
+
+(defn ->call-frame-name
+  [frame]
+  (let [n (:functionName frame)]
+    (if (empty? n) "(anonymous function)" n)))
+
+(defui call-frame
+  [panel frame]
+  [:div {} (->call-frame-name frame)]
+  :click (fn []
+           (.log js/console (clj->js (:debugger @panel)))
+           (object/update! panel [:debugger] assoc :scope-variables (:scopeChain frame))
+           (.log js/console "??" (clj->js frame))))
+
+(defn ->call-frames
+  [panel frames]
+  (when frames
+    (for [frame frames]
+      (call-frame panel frame))))
 
 ;(:debug-panel @(clients/by-id 300))
+
+(defn ->call-frames-class
+  "Get classes to apply to call frames list"
+  [call-frames]
+  (str "call-frames" (when (empty? call-frames) " empty")))
 
 
 (defui debug-panel [this]
@@ -240,7 +266,17 @@
    [:h1 {} "Debugger"]
    [:div {:class "controls"}
     (debug-panel-resume this)]
-   [:div {:class "scope-variables"} (bound (subatom this :scope-variables) ->scope-variables)]])
+   [:h2 "Call Stack"]
+   [:div {:class (bound (subatom this [:debugger :call-frames]) ->call-frames-class)}
+    (bound (subatom this [:debugger :call-frames]) #(->call-frames this %))]
+   [:h2 "Scope Variables"]
+   [:div {:class "scope-variables"}
+    (bound (subatom this [:debugger :scope-variables]) #(->scope-variables this %))]])
+
+(behavior ::debug-panel-destroyed
+          :triggers #{:destroy}
+          :reaction (fn [this]
+                      (println "destroy!!")))
 
 
 ;; When a client connects we want to create a debug panel we can use to control
@@ -248,12 +284,14 @@
 (behavior ::create-panel-on-connect
           :triggers #{:connect}
           :reaction (fn [this]
-                      (object/merge! this {:debug-panel (object/create ::debug-panel this (pool/last-active))})))
+                      (let [editor (pool/last-active)
+                            panel (object/create ::debug-panel this editor)]
+                        (object/merge! this {:debug-panel panel}))))
 
 ;; When client disconnects we need to remove the debug panel
 (behavior ::remove-panel-on-disconnect
           :triggers #{:disconnect}
-          :reaction (fn [this]
+          :reaction (fn [this client]
                       (when-let [panel (:debug-panel @this)]
                         (object/destroy! panel))))
 
@@ -266,19 +304,14 @@
                             breakpoint (-> params :hitBreakpoints first)
                             call-frames (:callFrames params)
                             ; TODO: This isn't necessarily true (could have changed tabs)
-                            editor (pool/last-active)
-                            ]
-                        ;(.log js/console (clj->js (get-script this (:scriptId loc))))
-                     ;   (when-let [p (dom/$ ".debug-panel")] (dom/remove p))
-                        (let [;panel (debug-panel editor this)
-                              scope-chain (-> call-frames first :scopeChain js->clj)
-                              panel (:debug-panel @this)
-                              ]
-                          (object/update! panel [:debugger] assoc :paused? true)
-                          (object/merge! panel {:scope-variables scope-chain}))
-                        ;  (doseq [scope scope-chain]
-                         ;     (dom/append panel
-                          ;                 (:result (chrome/inspector->result this {:result {:result (:object scope)}})))))
+                            editor (pool/last-active)]
+                        (.log js/console (clj->js s))
+                        (let [scope-chain (-> call-frames first :scopeChain js->clj)
+                              panel (:debug-panel @this)]
+                          (object/update! panel [:debugger] assoc
+                                          :paused? true
+                                          :call-frames call-frames
+                                          ))
                         (when breakpoint
                           (jump-to-bp breakpoint)))))
 
@@ -312,7 +345,7 @@
                        (chrome/send client {:id (chrome/next-id)
                                             :method "Debugger.resume"}
                                     (fn [r]
-                                      (object/update! (:debug-panel @client) [:debugger] assoc :paused? false)
+                                      (object/update! (:debug-panel @client) [:debugger] assoc :paused? false :scope-variables nil :call-frames nil)
                                       (object/raise editor :debugger-resumed)))))})
 
 

@@ -42,6 +42,18 @@
   float: left;
   margin-left: 20px;
 }
-.debug-panel .scope-variables {
+.debug-panel .scope-variables, .debug-panel h2 {
   clear: both;
+}
+.debug-panel > h2 {
+  text-decoration: underline;
+}
+.call-frames {
+  clear: both;
+}
+.call-frames.empty {
+  display: none;
+}
+.call-frames, .scope-variables {
+  padding: 10px;
 }
