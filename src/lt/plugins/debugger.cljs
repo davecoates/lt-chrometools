@@ -220,7 +220,11 @@
 
 (defui debug-panel-resume [this]
   [:button {:class "resume"} (bound this #(if (-> % :debugger :paused?) "▶" "="))]
-   :click (fn [] (cmd/exec! :resume-debugger editor client)))
+   :click (fn []
+            (let [c (if (-> @this :debugger :paused?) :resume-debugger :pause-debugger)
+                  editor (pool/last-active)
+                  client (:client @this)]
+              (cmd/exec! c editor client))))
 
 (defn ->scope-variables
   [vars]
@@ -270,6 +274,7 @@
                               scope-chain (-> call-frames first :scopeChain js->clj)
                               panel (:debug-panel @this)
                               ]
+                          (object/update! panel [:debugger] assoc :paused? true)
                           (object/merge! panel {:scope-variables scope-chain}))
                         ;  (doseq [scope scope-chain]
                          ;     (dom/append panel
@@ -307,6 +312,7 @@
                        (chrome/send client {:id (chrome/next-id)
                                             :method "Debugger.resume"}
                                     (fn [r]
+                                      (object/update! (:debug-panel @client) [:debugger] assoc :paused? false)
                                       (object/raise editor :debugger-resumed)))))})
 
 
