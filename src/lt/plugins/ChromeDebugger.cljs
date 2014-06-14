@@ -21,7 +21,6 @@
             [clojure.string :as string])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
-
 ;;;; Connector
 
 ;; Contains remote server details in form hostname:port

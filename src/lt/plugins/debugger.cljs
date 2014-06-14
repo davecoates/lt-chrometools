@@ -256,7 +256,9 @@
 
 ;; Editor object for evaling code on currently selected call frame
 (object/object* ::editor
-                :tags #{:editor :editor.inline-result :editor.keys.normal :editor.javascript}
+                ;; Note: we add the actual type later (eg. :editor.javascript)
+                ;; based on the current type
+                :tags #{:editor :editor.inline-result :editor.keys.normal}
                 :init (fn [obj info]
                         (let [edi (ed/make info)]
                           (object/merge! obj {:ed edi
@@ -308,6 +310,7 @@
    ; match current editor.
    (let [ed (object/create ::editor {:mime (last-ed-mime)})
          tags (get-ed-tags)]
+     (object/update! ed [:client] assoc :default (:client @this))
      (object/add-tags ed tags)
      (object/->content ed))
    ])
