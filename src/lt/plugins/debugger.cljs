@@ -1,17 +1,20 @@
 (ns lt.plugins.chromedebugger.debugger
   (:require
+   [clojure.set :refer [intersection]]
    [lt.objs.clients           :as clients]
    [lt.object                 :as object]
    [lt.objs.sidebar.command   :as cmd]
    [lt.objs.editor.pool       :as pool]
    [lt.objs.editor            :as ed]
    [lt.objs.eval              :as eval]
+   [lt.objs.files             :as files]
    [lt.objs.plugins :as plugins]
    [lt.util.dom :as dom]
    [crate.binding :refer [bound subatom]]
    [clojure.string            :as string]
    [lt.plugins.chromedebugger :as chrome])
   (:require-macros [lt.macros :refer [behavior defui]]))
+
 
 
 
@@ -231,7 +234,6 @@
   (when vars
     (for [var vars]
       (do
-      (println var)
       (:result (chrome/inspector->result (:client @panel) {:result {:result (:object var)}}))))))
 
 (defn ->call-frame-name
@@ -244,8 +246,28 @@
   [:div {} (->call-frame-name frame)]
   :click (fn []
            (.log js/console (clj->js (:debugger @panel)))
-           (object/update! panel [:debugger] assoc :scope-variables (:scopeChain frame))
+           (object/update! panel [:debugger] assoc :scope-variables (:scopeChain frame)
+                                                   :selected-frame frame)
            (.log js/console "??" (clj->js frame))))
+
+
+;;;;;;;
+
+
+;; Editor object for evaling code on currently selected call frame
+(object/object* ::editor
+                :tags #{:editor :editor.inline-result :editor.keys.normal :editor.javascript}
+                :init (fn [obj info]
+                        (let [edi (ed/make info)]
+                          (object/merge! obj {:ed edi
+                                              :doc (:doc info)
+                                              :info (dissoc info :content :doc)})
+                          (ed/wrap-object-events edi obj)
+                          (ed/->elem edi))))
+
+
+
+;;;;;;;;;;;;;
 
 (defn ->call-frames
   [panel frames]
@@ -261,6 +283,16 @@
   (str "call-frames" (when (empty? call-frames) " empty")))
 
 
+(defn last-ed-mime []
+  (-> @(pool/last-active) :info :mime))
+
+(defn get-ed-tags
+  ([] (get-ed-tags (pool/last-active)))
+  ([ed]
+  (let [type-name (-> @ed :info :type-name)]
+    (-> @files/files-obj :types (get type-name) :tags))))
+
+
 (defui debug-panel [this]
   [:div {:class "debug-panel"}
    [:h1 {} "Debugger"]
@@ -271,7 +303,15 @@
     (bound (subatom this [:debugger :call-frames]) #(->call-frames this %))]
    [:h2 "Scope Variables"]
    [:div {:class "scope-variables"}
-    (bound (subatom this [:debugger :scope-variables]) #(->scope-variables this %))]])
+    (bound (subatom this [:debugger :scope-variables]) #(->scope-variables this %))]
+   ; Create editor for evaluation on selected call frames. Set language to
+   ; match current editor.
+   (let [ed (object/create ::editor {:mime (last-ed-mime)})
+         tags (get-ed-tags)]
+     (object/add-tags ed tags)
+     (object/->content ed))
+   ])
+
 
 (behavior ::debug-panel-destroyed
           :triggers #{:destroy}

@@ -445,13 +445,31 @@
     (or (not (-> msg :data :meta))
         (not (find-script client (-> msg :data :path))))))
 
+(defn ->call-frame-id
+  "Get current call frame id from client. Will only be available is debugger is
+  active and paused"
+  [client]
+  (when-let [panel (:debug-panel @client)]
+    (println (-> @panel :debugger :selected-frame))
+    (-> @panel :debugger :selected-frame :callFrameId)))
+
 
 (defn eval-js [client msg cb]
-  (send client {:id (next-id) :method "Runtime.evaluate" :params {:expression (:code msg)}}
-        cb))
+  (if-let [call-frame (->call-frame-id client)]
+    ;; If we are paused in the debugger execute on the currently selected call
+    ;; frame. Call frame is selected on the debug panel.
+    (send client
+          {:id (next-id)
+           :method "Debugger.evaluateOnCallFrame"
+           :params {:callFrameId call-frame :expression (:code msg)}}
+          cb)
+    (send client
+          {:id (next-id)
+           :method "Runtime.evaluate"
+           :params {:expression (:code msg)}}
+          cb)))
 
 (defn changelive! [client obj path code cb else]
-  (println "changelive")
   (if-let [s (find-script client path)]
     (let [id (-> s vals first :scriptId)]
       (script-exists? client id
@@ -481,7 +499,7 @@
                                   (let [data (:data msg)
                                         data (assoc data :code (str (editor/->val ed) "\n\n//# sourceURL=" (-> data :path)))]
                                     (eval-js this  data (fn [res]
-                                                                                    (eval-js-form this msg)))))
+                                                          (eval-js-form this msg)))))
                                 (eval-js-form this msg))))
 
 (behavior ::change-live
@@ -496,6 +514,7 @@
                                         code (if (nil? code)
                                                (js/lt.plugins.watches.watched-range ed nil nil lt.plugins.js/src->watch)
                                                code)]
+                                    (println code)
                                     (changelive! this ed (-> msg :data :path)
                                                code
                                                (fn [res]

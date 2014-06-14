@@ -32,8 +32,8 @@
   background-color: black;
   border-radius: 10px;
   z-index:99;
-  transition: all 1s ease;
-  -webkit-transition: all 1s ease;
+  overflow: scroll;
+  max-height: 100%;
 }
 .debug-panel h1 {
   float: left;
