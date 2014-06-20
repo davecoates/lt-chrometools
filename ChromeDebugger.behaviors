@@ -24,6 +24,7 @@
                             ]
      :debug.panel [
                    :lt.plugins.chromedebugger.debugger/debug-panel-destroyed
+                   :lt.plugins.chromedebugger.debugger/debug-panel-shown
      ]
      :editor.javascript [:lt.plugins.chromedebugger.debugger/toggle-breakpoint
                          :lt.plugins.chromedebugger.debugger/add-breakpoint-marker

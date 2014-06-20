@@ -4,6 +4,7 @@
    [lt.objs.clients           :as clients]
    [lt.object                 :as object]
    [lt.objs.sidebar.command   :as cmd]
+   [lt.objs.sidebar           :as sidebar]
    [lt.objs.editor.pool       :as pool]
    [lt.objs.editor            :as ed]
    [lt.objs.eval              :as eval]
@@ -12,6 +13,7 @@
    [lt.util.dom :as dom]
    [crate.binding :refer [bound subatom]]
    [clojure.string            :as string]
+   [clojure.set               :as cljset]
    [lt.plugins.chromedebugger :as chrome])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
@@ -206,16 +208,6 @@
 
 
 
-;;; We have client which has a key :debug-panel which is a ::debug-panel
-;;; object. This object creates the HTML and sets up bindings to update scope
-;;; variables etc - they are bound to keys on the object (eg. :scope-variables)
-
-(object/object* ::debug-panel
-                :tags #{:debug.panel}
-                :init (fn [this client editor]
-                        (object/merge! this {:client client :debugger {:paused? false}})
-                        (dom/prepend (object/->content editor) (debug-panel this))))
-
 ;(object/destroy! (first (object/by-tag :debug.panel)))
 ;(def obj (object/create ::debug-panel {} (pool/last-active)))
 
@@ -226,15 +218,17 @@
    :click (fn []
             (let [c (if (-> @this :debugger :paused?) :resume-debugger :pause-debugger)
                   editor (pool/last-active)
-                  client (:client @this)]
+                  client (eval/get-client! {:command :chrome.remote.debug :origin editor})]
               (cmd/exec! c editor client))))
+
 
 (defn ->scope-variables
   [panel vars]
   (when vars
+    (let [client (eval/get-client! {:command :chrome.remote.debug :origin (pool/last-active)})]
     (for [var vars]
       (do
-      (:result (chrome/inspector->result (:client @panel) {:result {:result (:object var)}}))))))
+      (:result (chrome/inspector->result client {:result {:result (:object var)}})))))))
 
 (defn ->call-frame-name
   [frame]
@@ -245,10 +239,9 @@
   [panel frame]
   [:div {} (->call-frame-name frame)]
   :click (fn []
-           (.log js/console (clj->js (:debugger @panel)))
-           (object/update! panel [:debugger] assoc :scope-variables (:scopeChain frame)
+           (object/update! debug-sidebar [:debugger] assoc :scope-variables (:scopeChain frame)
                                                    :selected-frame frame)
-           (.log js/console "??" (clj->js frame))))
+           ))
 
 
 ;;;;;;;
@@ -263,9 +256,12 @@
                         (let [edi (ed/make info)]
                           (object/merge! obj {:ed edi
                                               :doc (:doc info)
+                                              :default-tags (:tags @obj)
                                               :info (dissoc info :content :doc)})
                           (ed/wrap-object-events edi obj)
                           (ed/->elem edi))))
+
+
 
 
 
@@ -278,6 +274,8 @@
       (call-frame panel frame))))
 
 ;(:debug-panel @(clients/by-id 300))
+
+(def debug-editor (object/create ::editor {}))
 
 (defn ->call-frames-class
   "Get classes to apply to call frames list"
@@ -306,14 +304,49 @@
    [:h2 "Scope Variables"]
    [:div {:class "scope-variables"}
     (bound (subatom this [:debugger :scope-variables]) #(->scope-variables this %))]
+   (object/->content debug-editor)
    ; Create editor for evaluation on selected call frames. Set language to
    ; match current editor.
-   (let [ed (object/create ::editor {:mime (last-ed-mime)})
-         tags (get-ed-tags)]
-     (object/update! ed [:client] assoc :default (:client @this))
-     (object/add-tags ed tags)
-     (object/->content ed))
+   ;(let [ed (object/create ::editor  {:mime (last-ed-mime)})
+   ;      tags (get-ed-tags)]
+   ;  (object/update! ed [:client] assoc :default (:client @this))
+   ;  (object/add-tags ed tags)
+   ;  (object/->content ed))
    ])
+
+;;; We have client which has a key :debug-panel which is a ::debug-panel
+;;; object. This object creates the HTML and sets up bindings to update scope
+;;; variables etc - they are bound to keys on the object (eg. :scope-variables)
+
+(object/object* ::debug-panel
+                :tags #{:debug.panel}
+                :init (fn [this]
+                        (object/merge! this {:debugger {:paused? false}})
+                        (debug-panel this)))
+                        ;(dom/prepend (object/->content editor) (debug-panel this))))
+
+
+(behavior ::debug-panel-shown
+          :triggers #{:show}
+          :reaction (fn [this]
+                      (let [client (eval/find-client {:command :chrome.remote.debug
+                                                      :origin (pool/last-active)})]
+                      (object/merge! this {:client client}))))
+
+(def debug-sidebar (object/create ::debug-panel))
+
+
+(defn ->chrome-clients
+  "From sequence of clients those that are Chrome clients"
+  [clients]
+  (let [valid? (fn [client] (and (= (:type client) "LT-UI")
+                                   (:connected client)))]
+  (filter #(-> % deref valid?) clients)))
+
+;(-> @(pool/last-active) :client vals ->chrome-clients)
+
+(sidebar/add-item sidebar/rightbar debug-sidebar)
+
 
 
 (behavior ::debug-panel-destroyed
@@ -324,12 +357,12 @@
 
 ;; When a client connects we want to create a debug panel we can use to control
 ;; it (eg. pause & resume debugger)
-(behavior ::create-panel-on-connect
-          :triggers #{:connect}
-          :reaction (fn [this]
-                      (let [editor (pool/last-active)
-                            panel (object/create ::debug-panel this editor)]
-                        (object/merge! this {:debug-panel panel}))))
+;(behavior ::create-panel-on-connect
+;          :triggers #{:connect}
+;          :reaction (fn [this]
+;                      (let [editor (pool/last-active)
+;                            panel (object/create ::debug-panel this editor)]
+;                        (object/merge! this {:debug-panel panel}))))
 
 ;; When client disconnects we need to remove the debug panel
 (behavior ::remove-panel-on-disconnect
@@ -338,6 +371,11 @@
                       (when-let [panel (:debug-panel @this)]
                         (object/destroy! panel))))
 
+
+(defn set-syntax
+  [editor type-name]
+  "Set editor to syntax identifed by type-name"
+  (pool/set-syntax editor(-> @files/files-obj :types (get type-name))))
 
 (behavior ::debugger-paused
           :triggers #{:Debugger.paused}
@@ -348,10 +386,14 @@
                             call-frames (:callFrames params)
                             ; TODO: This isn't necessarily true (could have changed tabs)
                             editor (pool/last-active)]
+
                         (.log js/console (clj->js s))
-                        (let [scope-chain (-> call-frames first :scopeChain js->clj)
-                              panel (:debug-panel @this)]
-                          (object/update! panel [:debugger] assoc
+
+                        (set-syntax debug-editor (-> @editor :info :type-name))
+                        (object/add-tags debug-editor (:default-tags @debug-editor))
+                        (object/update! debug-editor [:client] assoc :default this)
+                        (let [scope-chain (-> call-frames first :scopeChain js->clj)]
+                          (object/update! debug-sidebar [:debugger] assoc
                                           :paused? true
                                           :call-frames call-frames
                                           ))
@@ -382,21 +424,34 @@
               :desc "Chrome: Debugger - Resume"
               :exec (fn
                       ([]  (let [editor (pool/last-active)
-                                 client (eval/get-client! {:command :editor.eval.js :origin editor})]
+                                 client (eval/get-client! {:command :chrome.remote.debug :origin editor})]
                              (cmd/exec! :resume-debugger editor client)))
                       ([editor client]
                        (chrome/send client {:id (chrome/next-id)
                                             :method "Debugger.resume"}
                                     (fn [r]
-                                      (object/update! (:debug-panel @client) [:debugger] assoc :paused? false :scope-variables nil :call-frames nil)
+                                      (object/update! debug-sidebar [:debugger] assoc :paused? false :scope-variables nil :call-frames nil)
                                       (object/raise editor :debugger-resumed)))))})
+
+
+(cmd/command {:command :toggle-debug-panel
+              :desc "Chrome: Toggle Debug Panel"
+              :exec (fn []
+                      (object/raise sidebar/rightbar :toggle debug-sidebar))})
+
+(cmd/exec! :toggle-debug-panel)
+
+;(:type @(eval/find-client {:command :chrome.remote.debug :origin (pool/last-active) :create nil}))
+
+;(count @clients/cs)
+
 
 
 (cmd/command {:command :pause-debugger
               :desc "Chrome: Debugger - Pause"
               :exec (fn []
                      (let [editor (pool/last-active)
-                           client (eval/get-client! {:command :editor.eval.js :origin editor})]
+                           client (eval/get-client! {:command :chrome.remote.debug :origin editor})]
                        (chrome/send client {:id (chrome/next-id)
                                                :method "Debugger.pause"}
                                        (fn [r]

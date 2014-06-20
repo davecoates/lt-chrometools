@@ -382,6 +382,7 @@
   (object/merge! client {:socket (socket client (:webSocketDebuggerUrl tab))
                          :commands #{:editor.eval.cljs.exec
                                      :editor.eval.js
+                                     :chrome.remote.debug
                                      ;:editor.eval.html
                                      ;:editor.eval.css
                                      }
