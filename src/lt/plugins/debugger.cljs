@@ -275,7 +275,21 @@
 
 ;(:debug-panel @(clients/by-id 300))
 
-(def debug-editor (object/create ::editor {}))
+(declare debug-editor)
+(declare debug-sidebar)
+
+;(def debug-editor (object/create ::editor {}))
+
+
+(behavior ::initialise-debug-bar
+          :triggers #{:post-init}
+          :reaction (fn [app]
+                      ;; I'm sure this is bad form but needed way to delay creation. I'm assuming
+                      ;; I should be using an atom instead
+                      (def debug-editor (object/create ::editor {}))
+                      (def debug-sidebar (object/create ::debug-panel))
+                      (sidebar/add-item sidebar/rightbar debug-sidebar)))
+
 
 (defn ->call-frames-class
   "Get classes to apply to call frames list"
@@ -333,8 +347,6 @@
                                                       :origin (pool/last-active)})]
                       (object/merge! this {:client client}))))
 
-(def debug-sidebar (object/create ::debug-panel))
-
 
 (defn ->chrome-clients
   "From sequence of clients those that are Chrome clients"
@@ -345,7 +357,7 @@
 
 ;(-> @(pool/last-active) :client vals ->chrome-clients)
 
-(sidebar/add-item sidebar/rightbar debug-sidebar)
+;
 
 
 

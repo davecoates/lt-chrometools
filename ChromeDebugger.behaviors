@@ -1,5 +1,7 @@
 {:+ {:app [(:lt.objs.plugins/load-js "chromedebugger_compiled.js")
-            (:lt.objs.plugins/load-css "chromedebugger.css")]
+            (:lt.objs.plugins/load-css "chromedebugger.css")
+           :lt.plugins.chromedebugger.debugger/initialise-debug-bar
+           ]
      :editor.cljs [:lt.plugins.chromedebugger/cljs-result-inspector]
      :chrome.client.remote [:lt.plugins.chromedebugger/connect!
                             :lt.plugins.chromedebugger/close
