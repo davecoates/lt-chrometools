@@ -1,4 +1,4 @@
-(ns lt.plugins.chromedebugger
+(ns lt.plugins.chrometools
   (:refer-clojure :exclude [send])
   (:require [cljs.reader :as reader]
             [lt.objs.sidebar.clients :as scl]
@@ -11,7 +11,6 @@
             [lt.objs.clients :as clients]
             [lt.objs.eval :as eval]
             [fetch.core :as fetch]
-            [lt.objs.clients.devtools :as devtools]
             [lt.objs.notifos :as notifos]
             [lt.util.dom :as dom]
             [lt.plugins.js]
@@ -155,6 +154,17 @@
 ;; TODO: This is problematic in that it opens a new connection that shows
 ;; in the available connection list (and so could be manually disconnected)
 (defn load-lttools [] (str "
+     function LTToolsWatcher (exp, meta) {
+                           this.exp = exp;
+                           this.meta = meta;
+     }
+     window.lttools = {
+      watch: function(exp, meta) {
+        var w = new LTToolsWatcher(exp, meta);
+        console.log(w);
+      }
+    };
+                           /*
   (function () {
     function loadScript(sScriptSrc) {
       var oHead = document.getElementsByTagName('head')[0];
@@ -166,6 +176,7 @@
     }
     loadScript('http://localhost:" ws/port "/socket.io/lighttable/ws.js');
   }());
+                           */
   "))
 
 
@@ -247,11 +258,6 @@
                           (load-source-map this params))
                         (object/update! this [:scripts] assoc-in [(files/basename url) url] (:params s)))))
 
-(behavior ::console-log
-          :triggers #{:Console.messageAdded}
-          :reaction (fn [this m]
-                      ;; TODO
-                      nil))
 
 
 (behavior ::inspector-detached
@@ -282,48 +288,6 @@
                       (when (not= 1 (.-readyState socket))
                         (object/raise this :close!))))
 
-
-
-(behavior ::cljs-result-inspector
-          :triggers #{:editor.eval.cljs.result.inspector}
-          :reaction (fn [editor res]
-                      (let [meta (:meta res)
-                            loc {:line (dec (:end-line meta)) :ch (:end-column meta)
-                                 :start-line (dec (:line meta))}]
-                          (let [str-result (if (:result res)
-                                             (:result res)
-                                             "undefined")]
-                            (object/raise editor :editor.result str-result loc {:prefix " = "})))))
-
-
-
-(defn eval-cljs [client msg cb]
-  (send client {:id (next-id) :method "Runtime.evaluate" :params {:expression (:code  msg)}}
-        cb))
-
-
-(defn cljs-eval-cb [client msg form r]
-  (let [result (:result r)
-        error? (or (nil? result) (:wasThrown result))
-        error (or (:error result) (-> result :result :description))
-        meta (:meta form)
-        meta (assoc meta :result-type "inspector")
-        result (inspector->result client r)
-        result (assoc result :meta meta :no-inspect true)]
-    (if error?
-      (handle-cb (:cb msg) :editor.eval.cljs.exception {:ex error
-                                                        :meta (merge (:meta msg) (:meta form))})
-      (handle-cb (:cb msg)
-                 :editor.eval.cljs.result result))))
-
-(behavior ::cljs-exec
-                  :triggers #{:editor.eval.cljs.exec!}
-                  :reaction (fn [this msg form]
-                              (when-let [ed (object/by-id (:cb msg))]
-                                  (let [info (:data msg)]
-                                    (doseq [form (:results info)]
-                                      (let [cb (partial cljs-eval-cb this msg form)]
-                                        (eval-cljs this form cb)))))))
 
 
 ;;; Reconnect button gives user option to reconnect to a tab
@@ -411,17 +375,6 @@
   (object/raise clients/clients :message [cbid command data]))
 
 
-(defn eval-js-form [this msg]
-  (let [data (assoc (:data msg) :code (-> msg :data :code))]
-    (eval-js  this data
-                            (fn [res]
-                                (let [result (inspector->result this res)
-                                      req (:data msg)
-                                      result (assoc result :meta (:meta req) :no-inspect true)]
-                                  (if-not (:ex result)
-                                    (handle-cb (:cb msg) :editor.eval.js.result result)
-                                    (handle-cb (:cb msg) :editor.eval.js.exception result)))))
-    (object/raise this :editor.eval.js.change-live! msg)))
 
 
 (defn find-script [client path]
@@ -454,76 +407,12 @@
     (-> @panel :debugger :selected-frame :callFrameId)))
 
 
-(defn eval-js [client msg cb]
-  (if-let [call-frame (->call-frame-id client)]
-    ;; If we are paused in the debugger execute on the currently selected call
-    ;; frame. Call frame is selected on the debug panel.
-    (send client
-          {:id (next-id)
-           :method "Debugger.evaluateOnCallFrame"
-           :params {:callFrameId call-frame :expression (:code msg)}}
-          cb)
-    (send client
-          {:id (next-id)
-           :method "Runtime.evaluate"
-           :params {:expression (:code msg)}}
-          cb)))
-
-(defn changelive! [client obj path code cb else]
-  (if-let [s (find-script client path)]
-    (let [id (-> s vals first :scriptId)]
-      (script-exists? client id
-                      (fn [exists?]
-                        (if-not exists?
-                          (do (remove-script! client path id) (changelive! client obj path code cb else))
-                          (do
-                            (println "set script source" id)
-                            (object/merge! obj {:script-id id})
-                            ;;TODO: handle multiples
-                            (send client {:id (next-id) :method "Debugger.setScriptSource" :params {:scriptId id :scriptSource code}}
-                                  cb))))))
-    (else)))
 
 (behavior ::handle-send!
                   :triggers #{:send!}
                   :reaction (fn [this msg]
                               (object/raise this (keyword (str (:command msg) "!")) msg)
                               ))
-
-
-(behavior ::js-eval
-                  :triggers #{:editor.eval.js!}
-                  :reaction (fn [this msg]
-                              (if (must-eval-file? this msg)
-                                (when-let [ed (object/by-id (:cb msg))]
-                                  (let [data (:data msg)
-                                        data (assoc data :code (str (editor/->val ed) "\n\n//# sourceURL=" (-> data :path)))]
-                                    (eval-js this  data (fn [res]
-                                                          (eval-js-form this msg)))))
-                                (eval-js-form this msg))))
-
-(behavior ::change-live
-                  :triggers #{:editor.eval.js.change-live!}
-                  :reaction (fn [this msg]
-                              (when-let [ed (object/by-id (:cb msg))]
-                                (when (-> msg :data :path)
-                                  ;; Don't really know the best way to do this. If :full-source is
-                                  ;; available use that - this allows things like coffeescript to
-                                  ;; pass through compiled javascript.
-                                  (let [code (-> msg :data :full-source)
-                                        code (if (nil? code)
-                                               (js/lt.plugins.watches.watched-range ed nil nil lt.plugins.js/src->watch)
-                                               code)]
-                                    (println code)
-                                    (changelive! this ed (-> msg :data :path)
-                                               code
-                                               (fn [res]
-                                                 (println res)
-                                                 (if (:error res)
-                                                   (object/raise ed :editor.eval.js.change-live.error (:error res))
-                                                   ;;TODO: check for exception, otherwise, assume success
-                                                   (object/raise ed :editor.eval.js.change-live.success)))
-                                                 identity))))))
 
 
 ; TODO: For a connection allow selection of a javascript file. Fetch script source
@@ -547,106 +436,3 @@
 ;(do
 ;  (send c {:id (next-id) :method "Debugger.getScriptSource" :params {:scriptId "130"}} (fn [a] (println "result " a)))
 ;  "blah")
-
-
-
-
-;;*********************************************************
-;; Inspectors (copied from devtools.cljs)
-;;*********************************************************
-
-
-(defn format-value [v]
-  (let [val (:value v)]
-    (cond
-     (= val "undefined") "undefined"
-     (= (:type v) "string") (pr-str val)
-     (or (true? val) (false? val)) (pr-str val)
-     (or (nil? val)
-         (empty? val)) "null"
-     :else (:value v))))
-
-(defn i-compare [a b]
-  (let [ia (.indexOf a "__")
-        ib (.indexOf b "__")]
-    (if (and (= ia -1)
-             (= ib -1))
-      (compare a b)
-      (cond
-       (and (> ia -1)
-            (> ib -1)) (compare a b)
-       (> ia -1) 1
-       :else -1))))
-
-(defn ->name [obj]
-  (let [n (or (-> obj :name) (-> obj :value :description) (:description obj) "UnknownObject")]
-    (cond
-     (> (.indexOf n "e.fn.e.init") -1) (str "jQuery" (subs n 11))
-     :else n)))
-
-(defui desc [this obj]
-  [:h2 [:em (->name obj)] (when (:value obj) (str ": " (-> obj :value :description)))]
-  :click (fn []
-           (if (:open @this)
-             (object/merge! this {:open false})
-             (do
-               (object/merge! this {:open true})
-               (when-not (seq (:children @this))
-                 (send (:client @this) {:id 1 :method "Runtime.getProperties" :params {:objectId (or (-> obj :value :objectId) (:objectId obj)) :ownProperties true}}
-                       (fn [d]
-                         (object/merge! this {:children (-> d :result :result)}))))))))
-
-(defui props [this children]
-  [:ul
-   (for [c (sort-by :name i-compare children)]
-     (do
-       (if (and (= (-> c :value :type) "object")
-                (-> c :value :objectId))
-         [:li (object/->content (object/create ::inspector-object (:client @this) c))]
-         [:li [:em (:name c)] ": " (or (-> c :value :description) (str (-> c :value format-value)))])))])
-
-(defn ->open [this]
-  (if (:open this)
-    "inspector-object open"
-    "inspector-object"))
-
-(defn inspector->result [client o]
-  (let [res (-> o :result)
-        data (:result res)]
-    (if (:wasThrown res)
-      {:ex (:description data)}
-      {:result (condp = (:type data)
-                 "object" (object/->content (object/create ::inspector-object client data))
-                 (or (:description data) (pr-str (:value data)))
-                 )})))
-
-(defn clear-unused-inspectors []
-  (doseq [obj (object/by-tag :inspector.object)
-          :when (or (not (object/->content obj))
-                    (not (dom/parents (object/->content obj) :body)))]
-    (object/destroy! obj)))
-
-
-(behavior ::clean-inspectors-timer
-          :triggers #{:init}
-          :reaction (fn [this]
-                      ;;Every minute clear extraneous inspectors
-                      (every 60000 clear-unused-inspectors)
-                      ))
-
-(behavior ::clear-inspector-object
-          :triggers #{:destroy}
-          :reaction (fn [this]
-                      (when-let [id (or (-> @this :info :value :objectId)
-                                        (-> @this :info :objectId))]
-                        (send (:client @this) {:id (next-id) :method "Runtime.releaseObject" :params {:objectId id}}))))
-
-(object/object* ::inspector-object
-                :tags #{:inspector.object}
-                :init (fn [this client m]
-                        (object/merge! this {:client client
-                                             :info m})
-                        [:div {:class (bound this ->open)}
-                         (desc this m)
-                         [:div
-                          (bound (subatom this :children) (partial props this))]]))

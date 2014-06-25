@@ -1,4 +1,4 @@
-(ns lt.plugins.chromedebugger.debugger
+(ns lt.plugins.chrometools.debugger
   (:require
    [clojure.set :refer [intersection]]
    [lt.objs.clients           :as clients]
@@ -14,13 +14,14 @@
    [crate.binding :refer [bound subatom]]
    [clojure.string            :as string]
    [clojure.set               :as cljset]
-   [lt.plugins.chromedebugger :as chrome])
+   [lt.plugins.chrometools :as chrome]
+   [lt.plugins.chrometools.devtools :as devtools])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
 
 
 
-(def source-map (js/require (plugins/local-module "ChromeDebugger" "source-map")))
+(def source-map (js/require (plugins/local-module "ChromeTools" "source-map")))
 (def SourceMapConsumer (.-SourceMapConsumer source-map))
 
 
@@ -221,14 +222,28 @@
                   client (eval/get-client! {:command :chrome.remote.debug :origin editor})]
               (cmd/exec! c editor client))))
 
+(defn ->var-description
+  "Generate nice description for scope variables on stack frame
+
+  eg. local => Local
+      global => Global (Window)
+  "
+  [var]
+  (let [type (:type var)
+        desc (string/capitalize type)]
+    (if (= type "global")
+      (str desc " (" (-> var :object :className) ")")
+      desc)))
+
 
 (defn ->scope-variables
   [panel vars]
   (when vars
     (let [client (eval/get-client! {:command :chrome.remote.debug :origin (pool/last-active)})]
     (for [var vars]
-      (do
-      (:result (chrome/inspector->result client {:result {:result (:object var)}})))))))
+      ;; Set description to our var type - eg. local, global, closure etc rather than just Object etc
+      (let [var (assoc-in var [:object :description] (->var-description var))]
+            (:result (devtools/inspector->result client {:result {:result (:object var)}})))))))
 
 (defn ->call-frame-name
   [frame]

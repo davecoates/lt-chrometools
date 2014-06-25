@@ -1,2 +1,2 @@
-(defproject ChromeDebugger "0.0.1"
+(defproject ChromeTools "0.0.1"
   :dependencies [[org.clojure/clojure "1.5.1"]])

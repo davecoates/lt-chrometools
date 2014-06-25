@@ -1,0 +1,42 @@
+{:+ {:app [(:lt.objs.plugins/load-js "chrometools_compiled.js")
+            (:lt.objs.plugins/load-css "chrometools.css")
+           :lt.plugins.chrometools.debugger/initialise-debug-bar
+           ]
+     :editor.cljs [:lt.plugins.chrometools.eval/cljs-result-inspector]
+     :chrome.client.remote [:lt.plugins.chrometools/connect!
+                            :lt.plugins.chrometools/close
+                            :lt.plugins.chrometools/init-tab
+                            :lt.plugins.chrometools/print-messages
+                            :lt.plugins.chrometools.eval/js-eval
+                            :lt.plugins.chrometools.eval/cljs-exec
+                            :lt.plugins.chrometools.eval/change-live
+                            :lt.plugins.chrometools/handle-send!
+                            :lt.plugins.chrometools.console/console-log
+                            :lt.plugins.chrometools/remove-label
+                            :lt.plugins.chrometools/inspector-detached
+                            :lt.plugins.chrometools/clear-queue-on-connect
+                            :lt.plugins.chrometools/handle-message
+                            :lt.plugins.chrometools/script-parsed
+                            :lt.plugins.chrometools/handle-error
+                            :lt.plugins.chrometools/handle-page-reload
+                            :lt.plugins.chrometools.debugger/remove-breakpoint
+                            :lt.plugins.chrometools.debugger/debugger-paused
+                            :lt.plugins.chrometools.debugger/create-panel-on-connect
+                            :lt.plugins.chrometools.debugger/remove-panel-on-disconnect
+                            ]
+     :debug.panel [
+                   :lt.plugins.chrometools.debugger/debug-panel-destroyed
+                   :lt.plugins.chrometools.debugger/debug-panel-shown
+     ]
+     :editor.javascript [:lt.plugins.chrometools.debugger/toggle-breakpoint
+                         :lt.plugins.chrometools.debugger/add-breakpoint-marker
+                         :lt.plugins.chrometools.debugger/remove-breakpoint-marker
+                         :lt.plugins.chrometools.debugger/debugger-resumed
+                         ]
+     :editor.coffeescript [:lt.plugins.chrometools.debugger/toggle-breakpoint
+                           :lt.plugins.chrometools.debugger/add-breakpoint-marker
+                           :lt.plugins.chrometools.debugger/remove-breakpoint-marker
+                           :lt.plugins.chrometools.debugger/debugger-resumed
+                         ]
+     :reconnect-label [:lt.plugins.chrometools/on-remove-reconnect-label]
+     }}
