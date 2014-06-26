@@ -9,6 +9,7 @@
    [lt.objs.editor            :as ed]
    [lt.objs.eval              :as eval]
    [lt.objs.files             :as files]
+   [lt.objs.tabs :as tabs]
    [lt.objs.plugins :as plugins]
    [lt.util.dom :as dom]
    [crate.binding :refer [bound subatom]]
@@ -59,11 +60,32 @@
      (add-breakpoints-gutter ed)
      (.setGutterMarker cm line "breakpoints" (if marked? nil (make))))))
 
+
+(defn get-matching-source
+  "Get matching source for a file from a list of possible sources
+
+   Chooses the first matching item comparing each component of the path
+
+  eg path/test.coffee will match test.coffee or path/test.coffee
+  "
+  [sources path]
+  (let  [parts (string/split path "/")]
+    (first (for [source sources
+                 :let [source-parts (filter not-empty (string/split source "/"))
+                       l (count source-parts)
+                       p (take-last l parts)
+                       ]
+                 :when (= p source-parts)]
+             source))))
+
+
 (defn generated-position
   [path source-pos sm]
-  (js->clj (.generatedPositionFor
-            (SourceMapConsumer. (clj->js sm))
-            #js {:source path :line (:line source-pos) :column (:ch source-pos)})))
+  (let [smap (SourceMapConsumer. (clj->js sm))
+        source (get-matching-source (.-sources smap) path)]
+    (js->clj (.generatedPositionFor
+              (SourceMapConsumer. (clj->js sm))
+              #js {:source source :line (:line source-pos) :column (:ch source-pos)}))))
 
 
 ;;; Set and remove breakpoints in Chrome
@@ -87,6 +109,7 @@
       (chrome/script-exists? client id
                              (fn [exists?]
                                (println "exists?")
+                               location
                                (if-not exists?
                                  (do (chrome/remove-script! client path id) (set-breakpoint this path pos))
                                  (chrome/send client {:id (chrome/next-id)
@@ -199,7 +222,9 @@
             line (-> breakpoint :pos :line dec)]
         (object/update! origin [:chrome-debugger] assoc :paused-at line)
         (.addLineClass cm line "background" "breakpoint-paused")
-        (object/raise origin :focus!)))))
+        (tabs/active! origin)
+        (ed/move-cursor origin {:line line :ch 0})
+        (center-cursor origin)))))
 
 
 (defn get-scripts
@@ -424,6 +449,7 @@
                                           :paused? true
                                           :call-frames call-frames
                                           ))
+                        breakpoint
                         (when breakpoint
                           (jump-to-bp breakpoint)))))
 
