@@ -153,17 +153,48 @@
 ;; the remote browser websocket connection.
 ;; TODO: This is problematic in that it opens a new connection that shows
 ;; in the available connection list (and so could be manually disconnected)
+(def lttools-group-name "LTTOOLSWATCHER")
 (defn load-lttools [] (str "
-     function LTToolsWatcher (exp, meta) {
-                           this.exp = exp;
-                           this.meta = meta;
-     }
+  (function () {
+   function replacer(key, value) {
+    if(cache.length > 20) {
+      return;
+    }
+    if(window.jQuery && value instanceof jQuery) {
+      return \"[jQuery $(\" + value.selector + \")]\";
+    }
+    if(value instanceof Element) {
+      return \"[Element \" + value.tagName.toLowerCase() + (value.id != \"\" ? \"#\" : \"\") + value.id + \"]\";
+    }
+    if(typeof(value) == \"object\") {
+      if(cache.indexOf(value) > -1) {
+        return \"circular\";
+      }
+      cache.push(value);
+      return value;
+    }
+    if(typeof value == \"function\") {
+      return \"[function]\";
+    }
+    return value;
+  }
+
+  function safeStringify(res) {
+    cache = [];
+    return JSON.stringify(res, replacer);
+  }
      window.lttools = {
       watch: function(exp, meta) {
-        var w = new LTToolsWatcher(exp, meta);
+        var w = {
+          exp: safeStringify(exp),
+          meta: meta
+        };
+        console.group(\"" lttools-group-name "\")
         console.log(w);
+        console.groupEnd();
       }
     };
+ }());
                            /*
   (function () {
     function loadScript(sScriptSrc) {
@@ -184,7 +215,7 @@
   (send client {:id (next-id)
               :method "Runtime.evaluate"
               :params {:expression (load-lttools)}}
-        (fn [r] (println r))
+        (fn [r] (println "inject tools" r))
         ))
 
 ;; Called when a tab has been selected for debugging

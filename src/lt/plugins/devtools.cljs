@@ -2,7 +2,7 @@
   (:require
    [lt.object    :as object]
    [lt.util.dom  :as dom]
-   [lt.plugins.chrometools :refer [send]]
+   [lt.plugins.chrometools :refer [send next-id]]
    [crate.binding :refer [bound subatom]])
   (:require-macros [lt.macros :refer [behavior defui]]))
 

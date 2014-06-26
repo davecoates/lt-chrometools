@@ -1,7 +1,9 @@
 (ns lt.plugins.chrometools.console
   (:require [lt.object :as object]
             [lt.objs.files :as files]
+            [lt.objs.clients :as clients]
             [lt.objs.console :as console]
+            [lt.plugins.chrometools :as chrome]
             [lt.plugins.chrometools.devtools :as devtools]
             [clojure.string :as string])
   (:require-macros [lt.macros :refer [behavior defui]]))
@@ -12,19 +14,107 @@
 ;; changes (like to use the right client for inspector objects)
 ;;*********************************************************
 
+;; Track current console group per client
+;; Console groups are used internally to track watch messages
+;; See ::console-log behavior below for more details
+(def group-stack (atom {}))
+
+
+(defn ->group-value
+  "Extract group value from console log data"
+  [msg]
+  (-> msg :parameters first :value))
+
+
+(defn get-current-group
+  "Get current group for a client. Returns nil if no group."
+  [client-id]
+  (-> @group-stack (get client-id) peek))
+
+
+;;;; Prop functions are for dealing with properties returned by Chrome Debugger
+;;;; using Runtime.getProperties.
+(defn get-prop-by-name
+  "Get a property by name"
+  [result name]
+  (let [values (-> result :result :result)]
+    (first (filter #(= (:name %) name) values))))
+
+
+(defn format-value [v]
+  (let [val (:value v)]
+    val))
+
+
+(defn prop->pair
+  "Convert an individual property into key / value pair"
+  [prop]
+  (let [name (:name prop)]
+    (when (not= name "__proto__")
+      [(keyword name) (format-value (:value prop))])))
+
+
+(defn props->map
+  "Convert a list of properties into a map indexed by property name"
+  [result]
+  (let [values (-> result :result :result)]
+    (into {} (map prop->pair values))))
+
+
+(defn get-properties
+  "Get runtime properties of object identified by object-id. Calls callback cb on completion"
+  [client object-id cb]
+  (chrome/send client {:id (chrome/next-id)
+                       :method "Runtime.getProperties"
+                       :params {:objectId object-id :ownProperties true}}
+               (fn [d] (cb d))))
+
+
+;;; A watch result is received as a console.log message. We expect an object
+;;; with two keys: exp and meta. exp is the expression and is JSON encoded.
+;;; meta is a regular object and so we need to fetch its properties which will
+;;; tell us what watcher it is etc.
+(defn handle-watch-result
+  [client msg]
+  (get-properties client (-> msg :parameters first :objectId)
+                  (fn [d]
+                    (let [exp (get-prop-by-name d "exp")
+                          meta (get-prop-by-name d "meta")]
+                      ;; Fill out meta properties
+                      (get-properties client (-> meta :value :objectId)
+                                      (fn [r]
+                                        ;; Now we can raise watcher command against correct object
+                                        (let [meta (props->map r)
+                                              value {:result (->> exp :value :value (.parse js/JSON))}
+                                              value (assoc value :meta meta)]
+                                          (object/raise (object/by-id (:obj meta)) (-> meta :ev keyword) value))))))))
+
+
+
 (behavior ::console-log
           :triggers #{:Console.messageAdded}
           :reaction (fn [this m]
-                      (let [msg (-> m :params :message)
-                            msg (assoc msg :client this)]
-                        (handle-log-msg msg))))
+                      (let [id (object/->id this)
+                            type (-> m :params :message :type)
+                            msg (-> m :params :message)
+                            msg (assoc msg :client this)
+                            group (get-current-group id)]
+                        (case type
+                          ;; Console log groups are used to identify watch messages.
+                          ;; Any log that occurs during a group that matches lttools-group-name
+                          ;; is considered a watch message and is handled seperately. Anything
+                          ;; else is logged as normal.
+                          "startGroup" (swap! group-stack update-in [id] conj (->group-value msg))
+                          "endGroup" (swap! group-stack update-in [id] pop)
+                          "log" (if (= group chrome/lttools-group-name)
+                                  (handle-watch-result this msg)
+                                  (handle-log-msg msg))))))
 
 
 
 (defn msg->log [m]
   (let [params (:parameters m)
         client (:client m)]
-    (println m)
     (for [p params]
       (do
         [:span.log-val (cond
