@@ -18,8 +18,35 @@
 .reconnect-chrome span {
 	padding: 0 5px;
 }
-.breakpoint-paused {
+.breakpoint-paused .CodeMirror-linebackground,
+.breakpoint.breakpoint-paused .CodeMirror-linenumber{
   background-color: red;
+  opacity: 0.5;
+}
+.breakpoint.breakpoint-paused .breakpoint-icon {
+  border-left-color: red;
+}
+.breakpoint {
+/*  color: red;
+  background-color: #df7070;
+  width: 40px;
+  position:absolute;
+  left:-30px;
+  opacity: 0.5;*/
+}
+.breakpoint .CodeMirror-linenumber{
+  background-color: #6d88ff;
+  color: white;
+  opacity: 0.5
+}
+
+.breakpoint-icon {
+  opacity: 0.5;
+  width: 0;
+	height: 0;
+	border-top: 8px solid transparent;
+	border-bottom: 8px solid transparent;
+	border-left: 10px solid #6d88ff;
 }
 /*
 .debug-panel {

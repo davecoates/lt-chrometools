@@ -46,7 +46,7 @@
         (object/merge! client {:port port
                                :host host
                                :tabs-url url
-                               :name "Chrome Remote Debugger"})
+                               :name "Chrome"})
         (object/raise client :connect! url)))))
 
 
@@ -195,19 +195,6 @@
       }
     };
  }());
-                           /*
-  (function () {
-    function loadScript(sScriptSrc) {
-      var oHead = document.getElementsByTagName('head')[0];
-      var oScript = document.createElement('script');
-      oScript.setAttribute('src',sScriptSrc);
-      oScript.setAttribute('type','text/javascript');
-      oScript.setAttribute('id','lt_ws');
-      oHead.appendChild(oScript);
-    }
-    loadScript('http://localhost:" ws/port "/socket.io/lighttable/ws.js');
-  }());
-                           */
   "))
 
 
@@ -261,7 +248,7 @@
       (object/update! client [:scripts] assoc-in [(files/basename source) url] params))))
 
 
-(defn load-source-map [client params]
+(defn load-source-map [client params cb]
   "Load source map (sm-filename) for specified url"
   (let [sm-filename (:sourceMapURL params)
         url (:url params)
@@ -271,11 +258,13 @@
       ;; Assuming string will be base64 encoded
       ;; eg. data:application/json;base64,...
       (let [data (js->clj (js/JSON.parse (js/atob (second (.split sm-url ",")))) :keywordize-keys true)]
-        (store-source-map client url params data))
+        (store-source-map client url params data)
+        (cb data))
       (fetch/xhr sm-url {}
                (fn [d]
                  (when-let [data (js->clj (js/JSON.parse d) :keywordize-keys true)]
-                   (store-source-map client url params data)))))))
+                   (store-source-map client url params data)
+                   (cb data)))))))
 
 
 
@@ -285,9 +274,13 @@
                       (let [params (:params s)
                             source-map-url (:sourceMapURL params)
                             url (:url params)]
-                        (when source-map-url
-                          (load-source-map this params))
-                        (object/update! this [:scripts] assoc-in [(files/basename url) url] (:params s)))))
+                        (if source-map-url
+                          (load-source-map this params
+                                           (fn [sm]
+                                             (object/update! this [:scripts] assoc-in
+                                                             [(files/basename url) url]
+                                                             (assoc params :sourceMap sm))))
+                          (object/update! this [:scripts] assoc-in [(files/basename url) url] (:params s))))))
 
 
 
@@ -383,7 +376,7 @@
                                      }
                          :tab tab
                          :name (str "Chrome: " (:url tab))
-                         :type :chrome.client.remote })
+                         :type "Chrome" })
   (swap! connected-tabs assoc (:id tab) client))
 
 
@@ -412,6 +405,12 @@
   (let [found? (-> (@client :scripts)
                    (get (files/basename path)))]
     found?))
+
+
+(defn find-script-by-id [client id]
+  (first (for [[_ scripts] (:scripts @client) [_ script] scripts
+               :when (= (:scriptId script) id)]
+           script)))
 
 (defn script-exists? [client id cb]
   (send client {:id (next-id) :method "Debugger.canSetScriptSource" :params {:scriptId id}}

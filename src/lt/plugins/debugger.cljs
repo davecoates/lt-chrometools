@@ -9,17 +9,19 @@
    [lt.objs.editor            :as ed]
    [lt.objs.eval              :as eval]
    [lt.objs.files             :as files]
+   [lt.objs.notifos :as notifos]
    [lt.objs.tabs :as tabs]
    [lt.objs.plugins :as plugins]
    [lt.util.dom :as dom]
    [crate.binding :refer [bound subatom]]
    [clojure.string            :as string]
    [clojure.set               :as cljset]
+   [lt.util.cljs :refer [js->clj]]
    [lt.plugins.chrometools :as chrome]
    [lt.plugins.chrometools.devtools :as devtools])
-  (:require-macros [lt.macros :refer [behavior defui]]))
-
-
+  (:require-macros [lt.macros :refer [behavior defui]]
+                   [lt.plugins.chrometools :refer [with-client]]
+                   ))
 
 
 (def source-map (js/require (plugins/local-module "ChromeTools" "source-map")))
@@ -30,8 +32,8 @@
 
 (defn make-marker []
   (let [div (.createElement js/document "div")]
-    (set! (-> div .-style .-color) "red")
-    (set! (.-innerHTML div) "●")
+    (set! (.-className div) "breakpoint-icon")
+    ;(set! (.-innerHTML div) "▶")
     div))
 
 
@@ -41,7 +43,9 @@
    (let [cm (ed/->cm-ed ed)
          line (dec line) ; Lines appear to be 0 indexed
          ]
-     (add-breakpoints-gutter ed)
+     (if marker
+       (.addLineClass cm line "wrap" "breakpoint")
+       (.removeLineClass cm line "wrap" "breakpoint"))
      (.setGutterMarker cm line "breakpoints" marker))))
 
 
@@ -57,8 +61,43 @@
          line (dec line) ; Lines appear to be 0 indexed
          info (.lineInfo cm line)
          marked? (.-gutterMarkers info)]
-     (add-breakpoints-gutter ed)
      (.setGutterMarker cm line "breakpoints" (if marked? nil (make))))))
+
+(object/object* ::breakpoint
+                :tags #{:debug.breakpoint}
+                :init (fn [this ed client line]
+                        (object/merge! this {:client client
+                                             :editor ed
+                                             :line line})
+                        (set-marker ed line)))
+
+
+(behavior ::breakpoint-destroyed
+          :triggers #{:destroy}
+          :reaction (fn [this]
+                     (let [ed (:editor @this)
+                           line (:line @this)
+                           cm (ed/->cm-ed ed)]
+                       (.removeLineClass cm (dec line) "background" "breakpoint-paused-bg")
+                       (.removeLineClass cm (dec line) "wrapper" "breakpoint-paused")
+                       (remove-marker ed line))))
+
+
+;; If client is disconnected or page reloaded we need to clean up
+;; any breakpoints (breakpoints set via API are not retained on page reload)
+(behavior ::remove-breakpoints-on-disconnect
+          :triggers #{:disconnect :Debugger.globalObjectCleared}
+          :reaction (fn [this]
+                      (doseq [obj (object/by-tag :debug.breakpoint)]
+                        (when (= (:client @obj) this)
+                            (object/destroy! obj)))))
+
+(behavior ::add-breakpoints-gutter
+          :triggers #{:init}
+          :reaction (fn [ed]
+                      (add-breakpoints-gutter ed)))
+
+
 
 
 (defn get-matching-source
@@ -78,6 +117,17 @@
                  :when (= p source-parts)]
              source))))
 
+(defn original-position
+  [pos sm]
+  (let [smap (SourceMapConsumer. (clj->js sm))]
+    pos
+    (js->clj (.originalPositionFor smap (clj->js pos)) :keywordize-keys true)))
+     ;(.eachMapping smap (fn [m]
+ ;                  (.log js/console m)
+  ;                 ))))
+
+
+
 
 (defn generated-position
   [path source-pos sm]
@@ -85,7 +135,8 @@
         source (get-matching-source (.-sources smap) path)]
     (js->clj (.generatedPositionFor
               (SourceMapConsumer. (clj->js sm))
-              #js {:source source :line (:line source-pos) :column (:ch source-pos)}))))
+              #js {:source source :line (:line source-pos) :column (:ch source-pos)})
+             :keywordize-keys true)))
 
 
 ;;; Set and remove breakpoints in Chrome
@@ -100,26 +151,24 @@
           sm (-> s vals first :sourceMap)
           location (if sm
                      (let [gen-pos (generated-position path pos sm)
-                           line (dec (.-line gen-pos))
-                           column (.-column gen-pos)
+                           line (dec (:line gen-pos))
+                           column (:column gen-pos)
                            ]
                        {:lineNumber line :columnNumber column :scriptId id})
                      {:lineNumber (:line pos) :scriptId id})
           ]
       (chrome/script-exists? client id
                              (fn [exists?]
-                               (println "exists?")
-                               location
+                               exists?
                                (if-not exists?
                                  (do (chrome/remove-script! client path id) (set-breakpoint this path pos))
                                  (chrome/send client {:id (chrome/next-id)
-                                               :method "Debugger.setBreakpoint"
-                                               :params {:location location}}
-                                       (fn [r]
-                                         (println "done: " r)
-                                         (let [error (:error r)
-                                               success? (nil? error)]
-                                           (cb success? (if success? (:result r) error)))))))))))
+                                                      :method "Debugger.setBreakpoint"
+                                                      :params {:location location}}
+                                              (fn [r]
+                                                (let [error (:error r)
+                                                      success? (nil? error)]
+                                                  (cb success? (if success? (:result r) error)))))))))))
 
 
 (defn remove-breakpoint
@@ -143,11 +192,14 @@
   "Does specified editor have breakpoints gutter?"
   [ed] (not= (.indexOf (-> (ed/->cm-ed ed) (.-options) .-gutters) "breakpoints") -1))
 
+
 (defn add-breakpoints-gutter
   "Add breakpoints gutter to specified editor if it doesn't already exist"
   [ed]
-  (when-not (breakpoints-gutter? ed)
-    (ed/add-gutter ed "breakpoints" 5)))
+    (ed/on ed "gutterClick" (fn [cm n]
+                              (object/raise ed :toggle-breakpoint! {:line n})))
+    (ed/add-gutter ed "breakpoints" 0))
+
 
 
 (defn remove-breakpoints-gutter
@@ -165,10 +217,9 @@
 
 (behavior ::add-breakpoint-marker
            :triggers #{:breakpoint-set}
-           :reaction (fn [ed m]
-                       (println "lets set the marker")
-                       (set-marker ed (-> m :pos :line))
-                       (println "add breakpoint marker" m)))
+           :reaction (fn [ed client m]
+                       (notifos/set-msg! "Breakpoint set")
+                       (object/create ::breakpoint ed client (-> m :pos :line))))
 
 
 (behavior ::remove-breakpoint-marker
@@ -179,14 +230,14 @@
 
 (behavior ::toggle-breakpoint
            :triggers #{:toggle-breakpoint!}
-           :reaction (fn [this m]
-                       (println "toggle breakpoint!")
-                       (let [pos (ed/->cursor this)
-                             pos (assoc pos :line (-> pos :line inc))
+           :reaction (fn [this pos]
+                       (println "toggle breakpoint...")
+                       (let [pos (assoc pos :line (-> pos :line inc))
                              path (-> @this :info :path)
-                             client (eval/get-client! {:command :editor.eval.js :origin this})
+                             client (eval/get-client! {:command :chrome.remote.debug
+                                                       :origin this
+                                                       })
                              breakpoint (get-breakpoint client path pos)]
-                         (println (if breakpoint 1 0))
                          (if breakpoint
                            (remove-breakpoint client breakpoint
                                               (fn [r]
@@ -202,34 +253,67 @@
                                              (if success?
                                                (do
                                                  (object/raise this :breakpoint-set
+                                                               client
                                                                {:breakpoint result
                                                                 :path path
                                                                 :pos pos})
                                                  (swap! breakpoints assoc (:breakpointId result) {:path path :pos pos :breakpoint result :origin this})
                                                  (object/update! client [:breakpoints] assoc-in [path (:line pos)] result))
-                                               (object/raise this :breakpoint-set-error
-                                                             {:path path
-                                                              :pos pos
-                                                              :message result}))))))))
+                                               (do
+                                                 (notifos/set-msg! "Breakpoint could not be set")
+                                                 (object/raise this :breakpoint-set-error
+                                                               {:path path
+                                                                :pos pos
+                                                                :message result})))))))
+                         ))
+
+(defn jump-to-line
+  "Jump to a line in specified editor"
+  [editor line]
+  (let [cm (ed/->cm-ed editor)]
+    (object/update! editor [:chrome-debugger] assoc :paused-at line)
+    (.addLineClass cm line "wrapper" "breakpoint-paused")
+    (.addLineClass cm line "background" "breakpoint-paused-bg")
+    (tabs/active! editor)
+    (ed/move-cursor editor {:line line :ch 0})
+    (ed/center-cursor editor)))
+
+
+(defn jump-to-location
+  "Jump to a location identified by a script, line and column number
+
+  location is expected to be the :location value from a call frame returned
+  over the chrome debugging protocol
+
+  Supports source mapped locations."
+  [client location]
+  (let [id (:scriptId location)
+        script (chrome/find-script-by-id client id)
+        sm (:sourceMap script)
+        pos {:line (-> location :lineNumber inc) :column (:columnNumber location)}
+        pos (if sm
+              (original-position pos sm)
+              (assoc pos :source (files/basename (:url script))))
+        editor (get-editor-by-filename (:source pos))]
+    (when editor
+      (let [line (:line pos)
+            cm (ed/->cm-ed editor)]
+        (jump-to-line editor line)))))
+
 
 (defn jump-to-bp
-  [bp-id]
   "Jump to editor / line where breakpoint identified by bp-id is set"
+  [bp-id]
   (let [breakpoint (get @breakpoints bp-id)
         origin (:origin breakpoint)]
     (when breakpoint
-      (let [cm (ed/->cm-ed origin)
-            line (-> breakpoint :pos :line dec)]
-        (object/update! origin [:chrome-debugger] assoc :paused-at line)
-        (.addLineClass cm line "background" "breakpoint-paused")
-        (tabs/active! origin)
-        (ed/move-cursor origin {:line line :ch 0})
-        (center-cursor origin)))))
+      (let [line (-> breakpoint :pos :line dec)]
+        (jump-to-line origin line)))))
 
 
 (defn get-scripts
-  [client id]
   "Get scripts from client that have scriptId of id"
+  [client id]
   (for [[_ vs] (:scripts @client) [_ vvs] vs :when (= (:scriptId vvs) id)] vvs))
 
 
@@ -256,9 +340,10 @@
   [var]
   (let [type (:type var)
         desc (string/capitalize type)]
-    (if (= type "global")
-      (str desc " (" (-> var :object :className) ")")
-      desc)))
+    desc))
+    ;(if (= type "global")
+    ;  (str desc " (" (-> var :object :className) ")")
+    ;  desc)))
 
 
 (defn ->scope-variables
@@ -267,7 +352,12 @@
     (let [client (eval/get-client! {:command :chrome.remote.debug :origin (pool/last-active)})]
     (for [var vars]
       ;; Set description to our var type - eg. local, global, closure etc rather than just Object etc
-      (let [var (assoc-in var [:object :description] (->var-description var))]
+      (let [desc (->var-description var)
+            className (-> var :object :className)
+            var (assoc-in var [:object :name] desc)
+            var (if (not= className "Object")
+                  (assoc-in var [:object :value :description] className)
+                  var)]
             (:result (devtools/inspector->result client {:result {:result (:object var)}})))))))
 
 (defn ->call-frame-name
@@ -439,8 +529,6 @@
                             ; TODO: This isn't necessarily true (could have changed tabs)
                             editor (pool/last-active)]
 
-                        (.log js/console (clj->js s))
-
                         (set-syntax debug-editor (-> @editor :info :type-name))
                         (object/add-tags debug-editor (:default-tags @debug-editor))
                         (object/update! debug-editor [:client] assoc :default this)
@@ -449,9 +537,20 @@
                                           :paused? true
                                           :call-frames call-frames
                                           ))
-                        breakpoint
-                        (when breakpoint
-                          (jump-to-bp breakpoint)))))
+                        (object/raise sidebar/rightbar :show debug-sidebar)
+                        (if breakpoint
+                          (jump-to-bp breakpoint)
+                          (jump-to-location this (-> call-frames first :location))))))
+
+
+
+
+
+(defn get-editor-by-filename
+  [filename]
+  (first (filter #(= (-> @% :info :name) "cube.coffee")
+                         (object/by-tag :editor))))
+
 
 
 (behavior ::debugger-resumed
@@ -459,7 +558,7 @@
            :reaction (fn [this]
                        (let [line (get-in @this [:chrome-debugger :paused-at])
                              cm (ed/->cm-ed this)]
-                       (.removeLineClass cm line "background" "breakpoint-paused"))))
+                       (.removeLineClass cm line "wrapper" "breakpoint-paused"))))
 
 
 ;;; Commands
@@ -469,7 +568,7 @@
               :exec (fn []
                      (let [editor (pool/last-active)
                            pos (ed/->cursor editor)]
-                       (object/raise editor :toggle-breakpoint!)))})
+                       (object/raise editor :toggle-breakpoint! pos)))})
 
 
 

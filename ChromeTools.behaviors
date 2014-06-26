@@ -23,10 +23,14 @@
                             :lt.plugins.chrometools.debugger/debugger-paused
                             :lt.plugins.chrometools.debugger/create-panel-on-connect
                             :lt.plugins.chrometools.debugger/remove-panel-on-disconnect
+                            :lt.plugins.chrometools.debugger/remove-breakpoints-on-disconnect
                             ]
      :debug.panel [
                    :lt.plugins.chrometools.debugger/debug-panel-destroyed
                    :lt.plugins.chrometools.debugger/debug-panel-shown
+     ]
+     :debug.breakpoint [
+                    :lt.plugins.chrometools.debugger/breakpoint-destroyed
      ]
      :editor.javascript [:lt.plugins.chrometools.debugger/toggle-breakpoint
                          :lt.plugins.chrometools.debugger/add-breakpoint-marker
@@ -38,5 +42,6 @@
                            :lt.plugins.chrometools.debugger/remove-breakpoint-marker
                            :lt.plugins.chrometools.debugger/debugger-resumed
                          ]
+     :editor [:lt.plugins.chrometools.debugger/add-breakpoints-gutter]
      :reconnect-label [:lt.plugins.chrometools/on-remove-reconnect-label]
      }}
