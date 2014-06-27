@@ -48,6 +48,51 @@
 	border-bottom: 8px solid transparent;
 	border-left: 10px solid #6d88ff;
 }
+.debug-panel h1 {
+  display: inline-block;
+  padding-right: 10px;
+}
+.debug-panel .controls{
+  display: inline-block;
+}
+.debug-panel .call-frames > div {
+   border-bottom: 1px dotted;
+  padding-bottom :2px;
+}
+.debug-panel .call-frames div.selected {
+  border-bottom: 1px solid;
+}
+.debug-panel .call-frames div.selected:before {
+  content: "➤";
+  position: absolute;
+  left: 2px;
+  padding-top: 3px;
+  font-size: smaller;
+}
+.debug-panel > div > div > h2 {
+  text-decoration: underline;
+  font-weight: bold;
+}
+.unpaused .controls .stepover, .unpaused .controls .stepinto, .unpaused .controls .stepout {
+  display: none;
+}
+
+.call-stack, .variables {
+  padding-bottom :10px;
+}
+.unpaused .call-stack, .unpaused .variables, .unpaused .debug-editor {
+  display: none;
+}
+.call-stack .source, .call-stack .frame-name {
+  display: inline-block;
+}
+.call-stack .source {
+  float: right;
+}
+.call-stack .source-line:before, .call-stack .source-col:before  {
+  content: ":";
+}
+
 /*
 .debug-panel {
   position: absolute;

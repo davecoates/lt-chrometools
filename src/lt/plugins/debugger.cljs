@@ -13,7 +13,7 @@
    [lt.objs.tabs :as tabs]
    [lt.objs.plugins :as plugins]
    [lt.util.dom :as dom]
-   [crate.binding :refer [bound subatom]]
+   [crate.binding :refer [bound map-bound subatom]]
    [clojure.string            :as string]
    [clojure.set               :as cljset]
    [lt.util.cljs :refer [js->clj]]
@@ -159,7 +159,6 @@
           ]
       (chrome/script-exists? client id
                              (fn [exists?]
-                               exists?
                                (if-not exists?
                                  (do (chrome/remove-script! client path id) (set-breakpoint this path pos))
                                  (chrome/send client {:id (chrome/next-id)
@@ -236,10 +235,12 @@
                              path (-> @this :info :path)
                              client (eval/get-client! {:command :chrome.remote.debug
                                                        :origin this
+                                                       :create chrome/create-connection
                                                        })
                              breakpoint (get-breakpoint client path pos)]
-                         (if breakpoint
-                           (remove-breakpoint client breakpoint
+                         (with-client client
+                           (if breakpoint
+                             (remove-breakpoint client breakpoint
                                               (fn [r]
                                                 (object/raise this :breakpoint-removed
                                                               {:path path
@@ -247,7 +248,7 @@
                                                 (swap! breakpoints dissoc (-> (get-in @client [:breakpoints path (:line pos)]) :breakpointId))
                                                 (object/update! client [:breakpoints path] dissoc (:line pos))
                                                 (println "removed!!!!" r)))
-                           (set-breakpoint client path pos
+                             (set-breakpoint client path pos
                                            (fn [success? result]
                                              (println "cb: " success? result)
                                              (if success?
@@ -264,16 +265,16 @@
                                                  (object/raise this :breakpoint-set-error
                                                                {:path path
                                                                 :pos pos
-                                                                :message result})))))))
-                         ))
+                                                                :message result}))))))))))
 
 (defn jump-to-line
   "Jump to a line in specified editor"
-  [editor line]
+  [editor line paused?]
   (let [cm (ed/->cm-ed editor)]
-    (object/update! editor [:chrome-debugger] assoc :paused-at line)
-    (.addLineClass cm line "wrapper" "breakpoint-paused")
-    (.addLineClass cm line "background" "breakpoint-paused-bg")
+    (when paused?
+      (object/update! editor [:chrome-debugger] assoc :paused-at line)
+      (.addLineClass cm line "wrapper" "breakpoint-paused")
+      (.addLineClass cm line "background" "breakpoint-paused-bg"))
     (tabs/active! editor)
     (ed/move-cursor editor {:line line :ch 0})
     (ed/center-cursor editor)))
@@ -285,8 +286,12 @@
   location is expected to be the :location value from a call frame returned
   over the chrome debugging protocol
 
-  Supports source mapped locations."
-  [client location]
+  Supports source mapped locations.
+
+  If paused? is true then the debugger is paused on that line and appropriate
+  visual changes will be applied
+  "
+  [client location & paused?]
   (let [id (:scriptId location)
         script (chrome/find-script-by-id client id)
         sm (:sourceMap script)
@@ -298,7 +303,7 @@
     (when editor
       (let [line (:line pos)
             cm (ed/->cm-ed editor)]
-        (jump-to-line editor line)))))
+        (jump-to-line editor line paused?)))))
 
 
 (defn jump-to-bp
@@ -308,7 +313,7 @@
         origin (:origin breakpoint)]
     (when breakpoint
       (let [line (-> breakpoint :pos :line dec)]
-        (jump-to-line origin line)))))
+        (jump-to-line origin line true)))))
 
 
 (defn get-scripts
@@ -330,6 +335,30 @@
                   editor (pool/last-active)
                   client (eval/get-client! {:command :chrome.remote.debug :origin editor})]
               (cmd/exec! c editor client))))
+
+
+(defui debug-panel-stepover [this]
+  [:button
+   {:class "stepover"}  "↴"]
+   :click (fn []
+            (println "TODO")
+            ))
+
+(defui debug-panel-stepin [this]
+  [:button
+   {:class "stepinto"}  "↓"]
+   :click (fn []
+            (println "TODO")
+            ))
+
+(defui debug-panel-stepout [this]
+  [:button
+   {:class "stepout"}  "↑"]
+   :click (fn []
+            (println "TODO")
+            ))
+
+
 
 (defn ->var-description
   "Generate nice description for scope variables on stack frame
@@ -360,14 +389,53 @@
                   var)]
             (:result (devtools/inspector->result client {:result {:result (:object var)}})))))))
 
+(defn location->source
+  "Take a location and transform it to source position
+
+  location is a map and must contain :scriptId, :lineNumber
+  and :columnNumber
+
+  Retuns map
+    :source
+    :line
+    :column
+  "
+  [client location]
+  (let [script (chrome/find-script-by-id client (:scriptId location))
+        sm (:sourceMap script)
+        pos {:line (-> location :lineNumber inc)
+             :column (:columnNumber location)}]
+    (if sm
+      (original-position pos sm)
+      (assoc pos :source (files/basename (:url script))))))
+
 (defn ->call-frame-name
   [frame]
   (let [n (:functionName frame)]
     (if (empty? n) "(anonymous function)" n)))
 
+;; Displays a call frame file name and location
+(defui call-frame-location
+  [panel frame]
+  (let [location (location->source (:client @panel) (:location frame))]
+    [:div {:class "source"}
+     [:span {:class "source-file"}
+      (:source location)]
+     [:span {:class "source-location"}
+      [:span {:class "source-line"}
+       (:line location)]
+       [:span {:class "source-col"}
+       (:column location)]]]
+    )
+  :click (fn []
+           (jump-to-location (:client @panel) (:location frame))))
+
 (defui call-frame
   [panel frame]
-  [:div {} (->call-frame-name frame)]
+  [:div {:class (bound debug-sidebar #(if (= (-> % :debugger :selected-frame) frame) "selected" ""))}
+   [:div {:class "frame-name"}
+    (->call-frame-name frame)]
+   (call-frame-location panel frame)]
   :click (fn []
            (object/update! debug-sidebar [:debugger] assoc :scope-variables (:scopeChain frame)
                                                    :selected-frame frame)
@@ -439,24 +507,37 @@
 
 (defui debug-panel [this]
   [:div {:class "debug-panel"}
-   [:h1 {} "Debugger"]
-   [:div {:class "controls"}
-    (debug-panel-resume this)]
-   [:h2 "Call Stack"]
-   [:div {:class (bound (subatom this [:debugger :call-frames]) ->call-frames-class)}
-    (bound (subatom this [:debugger :call-frames]) #(->call-frames this %))]
-   [:h2 "Scope Variables"]
-   [:div {:class "scope-variables"}
-    (bound (subatom this [:debugger :scope-variables]) #(->scope-variables this %))]
-   (object/->content debug-editor)
-   ; Create editor for evaluation on selected call frames. Set language to
-   ; match current editor.
-   ;(let [ed (object/create ::editor  {:mime (last-ed-mime)})
-   ;      tags (get-ed-tags)]
-   ;  (object/update! ed [:client] assoc :default (:client @this))
-   ;  (object/add-tags ed tags)
-   ;  (object/->content ed))
-   ])
+   ; This wrapper div exists as I couldn't work out how to apply classes to top
+   ; level without overwriting the 'active' class that gets added by LT to show
+   ; it in the sidebar
+   [:div {:class (bound this #(if (-> % :debugger :paused?) "paused" "unpaused"))}
+     [:h1 {} "Debugger"]
+     [:div {:class "controls"}
+      (debug-panel-resume this)
+      (debug-panel-stepover this)
+      (debug-panel-stepin this)
+      (debug-panel-stepout this)
+      ]
+    [:div {:class "call-stack"}
+     [:h2 "Call Stack"]
+     [:div {:class (bound (subatom this [:debugger :call-frames]) ->call-frames-class)}
+      (bound (subatom this [:debugger :call-frames]) #(->call-frames this %))]
+     ]
+    [:div {:class "variables"}
+     [:h2 "Scope Variables"]
+     [:div {:class "scope-variables"}
+      (bound (subatom this [:debugger :scope-variables]) #(->scope-variables this %))]
+     ]
+    [:div {:class "debug-editor"}
+     (object/->content debug-editor)]
+     ; Create editor for evaluation on selected call frames. Set language to
+     ; match current editor.
+     ;(let [ed (object/create ::editor  {:mime (last-ed-mime)})
+     ;      tags (get-ed-tags)]
+     ;  (object/update! ed [:client] assoc :default (:client @this))
+     ;  (object/add-tags ed tags)
+     ;  (object/->content ed))
+   ]])
 
 ;;; We have client which has a key :debug-panel which is a ::debug-panel
 ;;; object. This object creates the HTML and sets up bindings to update scope

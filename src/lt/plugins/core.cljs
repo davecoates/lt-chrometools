@@ -15,10 +15,12 @@
             [lt.util.dom :as dom]
             [lt.plugins.js]
             [lt.objs.clients.ws :as ws]
-            [lt.util.cljs :refer [wait js->clj]]
+            [lt.util.cljs :refer [js->clj]]
+            [lt.util.js :refer [wait]]
             [crate.binding :refer [bound subatom]]
             [clojure.string :as string])
   (:require-macros [lt.macros :refer [behavior defui]]))
+
 
 ;;;; Connector
 
@@ -32,14 +34,14 @@
   :blur (fn []
           (ctx/out! :popup.input)))
 
-(defn connect-to-remote [server]
+(defn connect-to-remote [server client]
   "Connect to remote debugging interface specified by server (host:port)
 
   Saves server in remote-server var for next connection attempt. On failure
   this is reset. "
   (let [[host port] (string/split server ":")]
     (when (and host port)
-      (let [client (clients/client! :chrome.client.remote)
+      (let [client (or client (clients/client! :chrome.client.remote))
             url (str "http://" server "/json") ]
         ; Save settings
         (reset! remote-server server)
@@ -50,8 +52,9 @@
         (object/raise client :connect! url)))))
 
 
-(defn remote-connect []
+(defn remote-connect
   "Display UI for entering server details"
+  [client]
   (let [input (server-input)
         p (popup/popup! {:header "Connect to Chrome using remote debuging protocol."
                          :body [:div
@@ -62,19 +65,29 @@
                          :buttons [{:label "cancel"}
                                    {:label "connect"
                                     :action (fn []
-                                              (connect-to-remote (dom/val input)))}]})]
+                                              (connect-to-remote (dom/val input) client))}]})]
     (dom/focus input)
     (.setSelectionRange input 1000 1000)))
 
+(def connector-name "Chrome (Remote Debugging Protocol)")
 
-(scl/add-connector {:name "Chrome (Remote Debugging Protocol)"
+(scl/add-connector {:name connector-name
                     :desc "Enter in the host:port address of remote debugging server to connect to"
-                    :connect (fn []
+                    :connect (fn [client]
                                (if @remote-server
-                                 (connect-to-remote @remote-server)
-                                 (remote-connect)))})
+                                 (connect-to-remote @remote-server client)
+                                 (remote-connect client)))})
 
+(defn create-connection
+  []
+  (let [client (clients/client! :chrome.client.remote)]
+    ((:connect (get (:connectors @scl/clients) connector-name)) client)
+    (swap! client assoc :connected false)
+    client))
 
+; Think about this. This works and allows sending params through to connect.
+; But what about fetching existing connection?
+;((:connect (get (:connectors @scl/clients) "Chrome (Remote Debugging Protocol)")) "lol")
 
 (defn socket [this url]
   "Establish connection to url against client this"
@@ -141,12 +154,23 @@
                       (clients/rem! this)))
 
 
+
 ;; Clears message queue when socket connection is established to a particular tab
 (behavior ::clear-queue-on-connect
           :triggers #{:connect}
           :reaction (fn [this]
+                      ; These are messages queued for the connection itself
                       (doseq [msg (:queue @this)]
-                        (apply send msg))))
+                        (apply send msg))
+                      ; These are callbacks we want executed once connected
+                      (when-let [cbs (:queued-callbacks @this)]
+                        ; Dirty hack :( Delay slightly to let debug initialise first
+                        ; and receive events for script-parsed etc
+                        (wait 4500 (fn []
+                                    (doseq [cb (:queued-callbacks @this)]
+                                      cb
+                                      (cb)))))))
+                       ; (map #(%) (:queued-callbacks @this)))))
 
 
 ;; Raw js to send through to load lttools. We use same implementation as
