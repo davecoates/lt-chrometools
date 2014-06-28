@@ -4,6 +4,7 @@
             [lt.objs.sidebar.clients :as scl]
             [lt.objs.files :as files]
             [lt.objs.popup :as popup]
+            [lt.objs.cache :as cache]
             [lt.objs.context :as ctx]
             [lt.objs.editor :as editor]
             [lt.objs.editor.pool :as pool]
@@ -21,11 +22,9 @@
             [clojure.string :as string])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
-
 ;;;; Connector
 
 ;; Contains remote server details in form hostname:port
-(def remote-server (atom nil))
 
 (defui server-input []
   [:input {:type "text" :placeholder "host:port" :value "localhost:"}]
@@ -34,17 +33,19 @@
   :blur (fn []
           (ctx/out! :popup.input)))
 
+(def cache-key ::chrome-debugger-server)
+
 (defn connect-to-remote [server client]
   "Connect to remote debugging interface specified by server (host:port)
 
-  Saves server in remote-server var for next connection attempt. On failure
+  Caches value for next connection attempt. On failure
   this is reset. "
   (let [[host port] (string/split server ":")]
     (when (and host port)
       (let [client (or client (clients/client! :chrome.client.remote))
             url (str "http://" server "/json") ]
         ; Save settings
-        (reset! remote-server server)
+        (cache/store! cache-key server)
         (object/merge! client {:port port
                                :host host
                                :tabs-url url
@@ -74,9 +75,10 @@
 (scl/add-connector {:name connector-name
                     :desc "Enter in the host:port address of remote debugging server to connect to"
                     :connect (fn [client]
-                               (if @remote-server
-                                 (connect-to-remote @remote-server client)
-                                 (remote-connect client)))})
+                               (let [remote-server (cache/fetch cache-key)]
+                                 (if remote-server
+                                   (connect-to-remote remote-server client)
+                                   (remote-connect client))))})
 
 (defn create-connection
   []
@@ -137,7 +139,7 @@
                                      (if (not-empty d)
                                          (select-tab this (-> d js/JSON.parse (js->clj :keywordize-keys true)))
                                        (do
-                                         (reset! remote-server nil)
+                                         (cache/store! ::chrome-debugger-port nil)
                                          (popup/popup! {:header "We couldn't connect."
                                                        :body [:span "There was a problem connecting. Check the port and make
                                                               sure chrome was launched with the --remote-debugging-port option"]
