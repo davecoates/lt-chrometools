@@ -21,13 +21,13 @@ Add a new connection and choose *Chrome (Remote Debugging Protocol)*. You will t
   - [x] Javascript
   - [x] ClojureScript
   - [x] CoffeeScript eval (using https://github.com/davecoates/lt-coffeescript)
-- [ ] - Watches (with some caveats, see issue #1)
+- [ ] - Watches
   - [x] Javascript
   - [x] CoffeeScript
   - [ ] ClojureScript
 - [ ] - Debugging
   - [x] Add / remove breakpoints
   - [X] Set breakpoints from source mapped files
-  - [ ] Eval in paused stackframe
-  - [ ] Browse stack frame
+  - [X] Eval in paused stackframe
+  - [X] Browse stack frame
   - ...
