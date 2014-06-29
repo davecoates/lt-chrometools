@@ -13,7 +13,7 @@
    [lt.objs.tabs :as tabs]
    [lt.objs.plugins :as plugins]
    [lt.util.dom :as dom]
-   [crate.binding :refer [bound map-bound subatom]]
+   [crate.binding :refer [bound subatom]]
    [clojure.string            :as string]
    [clojure.set               :as cljset]
    [lt.util.cljs :refer [js->clj]]
@@ -246,11 +246,9 @@
                                                               {:path path
                                                                :pos pos})
                                                 (swap! breakpoints dissoc (-> (get-in @client [:breakpoints path (:line pos)]) :breakpointId))
-                                                (object/update! client [:breakpoints path] dissoc (:line pos))
-                                                (println "removed!!!!" r)))
+                                                (object/update! client [:breakpoints path] dissoc (:line pos))))
                              (set-breakpoint client path pos
                                            (fn [success? result]
-                                             (println "cb: " success? result)
                                              (if success?
                                                (do
                                                  (object/raise this :breakpoint-set
@@ -269,10 +267,11 @@
 
 (defn jump-to-line
   "Jump to a line in specified editor"
-  [editor line paused?]
+  [client editor line paused?]
   (let [cm (ed/->cm-ed editor)]
     (when paused?
-      (object/update! editor [:chrome-debugger] assoc :paused-at line)
+      (object/update! client [:debugger] assoc :paused-at {:ed editor
+                                                           :line line})
       (.addLineClass cm line "wrapper" "breakpoint-paused")
       (.addLineClass cm line "background" "breakpoint-paused-bg"))
     (tabs/active! editor)
@@ -291,29 +290,30 @@
   If paused? is true then the debugger is paused on that line and appropriate
   visual changes will be applied
   "
-  [client location & paused?]
-  (let [id (:scriptId location)
-        script (chrome/find-script-by-id client id)
-        sm (:sourceMap script)
-        pos {:line (-> location :lineNumber inc) :column (:columnNumber location)}
-        pos (if sm
-              (original-position pos sm)
-              (assoc pos :source (files/basename (:url script))))
-        editor (get-editor-by-filename (:source pos))]
-    (when editor
-      (let [line (:line pos)
-            cm (ed/->cm-ed editor)]
-        (jump-to-line editor line paused?)))))
+  ([client location] (jump-to-location client location false))
+  ([client location paused?]
+   (let [id (:scriptId location)
+         script (chrome/find-script-by-id client id)
+         sm (:sourceMap script)
+         pos {:line (-> location :lineNumber inc) :column (:columnNumber location)}
+         pos (if sm
+               (original-position pos sm)
+               (assoc pos :source (files/basename (:url script))))
+         editor (get-editor-by-filename (:source pos))]
+     (when editor
+       (let [line (:line pos)
+             cm (ed/->cm-ed editor)]
+        (jump-to-line client editor line paused?))))))
 
 
 (defn jump-to-bp
   "Jump to editor / line where breakpoint identified by bp-id is set"
-  [bp-id]
+  [client bp-id]
   (let [breakpoint (get @breakpoints bp-id)
         origin (:origin breakpoint)]
     (when breakpoint
       (let [line (-> breakpoint :pos :line dec)]
-        (jump-to-line origin line true)))))
+        (jump-to-line client origin line true)))))
 
 
 (defn get-scripts
@@ -328,35 +328,12 @@
 
 ;(do (object/update! obj [:debugger] assoc :paused? true) nil)
 
-(defui debug-panel-resume [this]
-  [:button {:class "resume"} (bound this #(if (-> % :debugger :paused?) "▶" "="))]
-   :click (fn []
-            (let [c (if (-> @this :debugger :paused?) :resume-debugger :pause-debugger)
-                  editor (pool/last-active)
-                  client (eval/get-client! {:command :chrome.remote.debug :origin editor})]
-              (cmd/exec! c editor client))))
 
-
-(defui debug-panel-stepover [this]
-  [:button
-   {:class "stepover"}  "↴"]
-   :click (fn []
-            (println "TODO")
-            ))
-
-(defui debug-panel-stepin [this]
-  [:button
-   {:class "stepinto"}  "↓"]
-   :click (fn []
-            (println "TODO")
-            ))
-
-(defui debug-panel-stepout [this]
-  [:button
-   {:class "stepout"}  "↑"]
-   :click (fn []
-            (println "TODO")
-            ))
+(defn bound-client
+  [obj path f]
+  (bound obj (fn []
+               (when-let [client (:client @obj)]
+                 (f (get-in @client (into [:debugger] path)) client)))))
 
 
 
@@ -376,9 +353,8 @@
 
 
 (defn ->scope-variables
-  [panel vars]
+  [vars client]
   (when vars
-    (let [client (eval/get-client! {:command :chrome.remote.debug :origin (pool/last-active)})]
     (for [var vars]
       ;; Set description to our var type - eg. local, global, closure etc rather than just Object etc
       (let [desc (->var-description var)
@@ -387,7 +363,8 @@
             var (if (not= className "Object")
                   (assoc-in var [:object :value :description] className)
                   var)]
-            (:result (devtools/inspector->result client {:result {:result (:object var)}})))))))
+            (:result (devtools/inspector->result client
+                                                 {:result {:result (:object var)}}))))))
 
 (defn location->source
   "Take a location and transform it to source position
@@ -430,16 +407,118 @@
   :click (fn []
            (jump-to-location (:client @panel) (:location frame))))
 
+
 (defui call-frame
   [panel frame]
-  [:div {:class (bound debug-sidebar #(if (= (-> % :debugger :selected-frame) frame) "selected" ""))}
+  [:div {:class (bound-client panel [:selected-frame]
+                              #(if (= % frame)
+                                 "selected" ""))}
    [:div {:class "frame-name"}
     (->call-frame-name frame)]
    (call-frame-location panel frame)]
   :click (fn []
-           (object/update! debug-sidebar [:debugger] assoc :scope-variables (:scopeChain frame)
-                                                   :selected-frame frame)
-           ))
+           (let [client (:client @panel)]
+             (object/update! client [:debugger] assoc
+                             :scope-variables (:scopeChain frame)
+                             :selected-frame frame))))
+
+
+(defui debug-panel-resume [this]
+  [:button {:class "resume"} (bound-client this [:paused?]
+                                           #(if % "▶" "="))]
+   :click (fn []
+            (let [client (:client @this)
+                  c (if (-> @client :debugger :paused?)
+                      :resume-debugger
+                      :pause-debugger)
+                  ]
+              (cmd/exec! c client))))
+
+
+(defui reconnect-button [this]
+  [:button
+   {:class "reconnect-button"}
+   "Reconnect"]
+  :click (fn []
+           (let [tab (:reconnect-tab @this)
+                 client (clients/client! :chrome.client.remote)]
+             (swap! this dissoc :show-reconnect)
+             (chrome/connect-tab client tab))))
+
+
+(defui debug-panel-stepover [this]
+  [:button
+   {:class "stepover"}  "↴"]
+   :click (fn []
+            (println "TODO")
+            ))
+
+(defui debug-panel-stepin [this]
+  [:button
+   {:class "stepinto"}  "↓"]
+   :click (fn []
+            (println "TODO???")
+            ))
+
+(defui debug-panel-stepout [this]
+  [:button
+   {:class "stepout"}  "↑"]
+   :click (fn []
+            (println "TODO")
+            ))
+
+
+(defn create-call-frames
+  "Create call-frame UI elements"
+  [panel frames]
+  (when frames
+    (for [frame frames]
+      (call-frame panel frame))))
+
+
+
+(defn ->call-frames-class
+  "Get classes to apply to call frames container"
+  [call-frames client]
+  (str "call-frames" (when (empty? call-frames) " empty")))
+
+
+(defn debug-panel-classes
+  [panel state client]
+  (let [classes [(if (:paused? state) "paused" "unpaused")]
+        classes (conj classes (if (:connected @client) "connected" "disconnected"))
+        classes (conj classes (when (:show-reconnect @panel) "reconnect-available"))]
+    (string/join " " classes)))
+
+
+(defui debug-panel [this]
+  [:div {:class "debug-panel"}
+   ; This wrapper div exists as I couldn't work out how to apply classes to top
+   ; level without overwriting the 'active' class that gets added by LT to show
+   ; it in the sidebar
+   [:div {:class (bound-client this [] (partial debug-panel-classes this))}
+     [:h1 {} "Debugger"]
+     [:div {:class "controls"}
+      (debug-panel-resume this)
+      (debug-panel-stepover this)
+      (debug-panel-stepin this)
+      (debug-panel-stepout this)
+      (reconnect-button this)
+      ]
+    [:div {:class "call-stack"}
+     [:h2 "Call Stack"]
+     [:div {:class (bound-client this [:call-frames]
+                                 ->call-frames-class)}
+      (bound-client this [:call-frames] #(create-call-frames this %))]
+     ]
+    [:div {:class "variables"}
+     [:h2 "Scope Variables"]
+     [:div {:class "scope-variables"}
+      (bound-client this [:scope-variables] #(->scope-variables %1 %2))]
+     ]
+    [:div {:class "debug-editor"}
+     (object/->content debug-editor)]
+   ]])
 
 
 ;;;;;;;
@@ -449,7 +528,7 @@
 (object/object* ::editor
                 ;; Note: we add the actual type later (eg. :editor.javascript)
                 ;; based on the current type
-                :tags #{:editor :editor.inline-result :editor.keys.normal}
+                :tags #{:editor :editor.inline-result :editor.keys.normal :editor.debugger}
                 :init (fn [obj info]
                         (let [edi (ed/make info)]
                           (object/merge! obj {:ed edi
@@ -465,18 +544,9 @@
 
 ;;;;;;;;;;;;;
 
-(defn ->call-frames
-  [panel frames]
-  (when frames
-    (for [frame frames]
-      (call-frame panel frame))))
-
-;(:debug-panel @(clients/by-id 300))
 
 (declare debug-editor)
 (declare debug-sidebar)
-
-;(def debug-editor (object/create ::editor {}))
 
 
 (behavior ::initialise-debug-bar
@@ -489,55 +559,6 @@
                       (sidebar/add-item sidebar/rightbar debug-sidebar)))
 
 
-(defn ->call-frames-class
-  "Get classes to apply to call frames list"
-  [call-frames]
-  (str "call-frames" (when (empty? call-frames) " empty")))
-
-
-(defn last-ed-mime []
-  (-> @(pool/last-active) :info :mime))
-
-(defn get-ed-tags
-  ([] (get-ed-tags (pool/last-active)))
-  ([ed]
-  (let [type-name (-> @ed :info :type-name)]
-    (-> @files/files-obj :types (get type-name) :tags))))
-
-
-(defui debug-panel [this]
-  [:div {:class "debug-panel"}
-   ; This wrapper div exists as I couldn't work out how to apply classes to top
-   ; level without overwriting the 'active' class that gets added by LT to show
-   ; it in the sidebar
-   [:div {:class (bound this #(if (-> % :debugger :paused?) "paused" "unpaused"))}
-     [:h1 {} "Debugger"]
-     [:div {:class "controls"}
-      (debug-panel-resume this)
-      (debug-panel-stepover this)
-      (debug-panel-stepin this)
-      (debug-panel-stepout this)
-      ]
-    [:div {:class "call-stack"}
-     [:h2 "Call Stack"]
-     [:div {:class (bound (subatom this [:debugger :call-frames]) ->call-frames-class)}
-      (bound (subatom this [:debugger :call-frames]) #(->call-frames this %))]
-     ]
-    [:div {:class "variables"}
-     [:h2 "Scope Variables"]
-     [:div {:class "scope-variables"}
-      (bound (subatom this [:debugger :scope-variables]) #(->scope-variables this %))]
-     ]
-    [:div {:class "debug-editor"}
-     (object/->content debug-editor)]
-     ; Create editor for evaluation on selected call frames. Set language to
-     ; match current editor.
-     ;(let [ed (object/create ::editor  {:mime (last-ed-mime)})
-     ;      tags (get-ed-tags)]
-     ;  (object/update! ed [:client] assoc :default (:client @this))
-     ;  (object/add-tags ed tags)
-     ;  (object/->content ed))
-   ]])
 
 ;;; We have client which has a key :debug-panel which is a ::debug-panel
 ;;; object. This object creates the HTML and sets up bindings to update scope
@@ -546,17 +567,17 @@
 (object/object* ::debug-panel
                 :tags #{:debug.panel}
                 :init (fn [this]
-                        (object/merge! this {:debugger {:paused? false}})
+                        (object/merge! this {:client nil})
                         (debug-panel this)))
                         ;(dom/prepend (object/->content editor) (debug-panel this))))
 
 
-(behavior ::debug-panel-shown
-          :triggers #{:show}
-          :reaction (fn [this]
-                      (let [client (eval/find-client {:command :chrome.remote.debug
-                                                      :origin (pool/last-active)})]
-                      (object/merge! this {:client client}))))
+;(behavior ::debug-panel-shown
+;          :triggers #{:show}
+;          :reaction (fn [this]
+;                      (let [client (eval/find-client {:command :chrome.remote.debug
+;                                                      :origin (pool/last-active)})]
+;                      (object/merge! this {:client client}))))
 
 
 (defn ->chrome-clients
@@ -595,10 +616,12 @@
                         (object/destroy! panel))))
 
 
-(defn set-syntax
-  [editor type-name]
-  "Set editor to syntax identifed by type-name"
-  (pool/set-syntax editor(-> @files/files-obj :types (get type-name))))
+
+(defn source->file-type
+  [source]
+  source
+  (let [ext (-> source files/ext string/lower-case)]
+    (files/ext->type (keyword ext))))
 
 (behavior ::debugger-paused
           :triggers #{:Debugger.paused}
@@ -607,39 +630,54 @@
                             reason (:reason params)
                             breakpoint (-> params :hitBreakpoints first)
                             call-frames (:callFrames params)
-                            ; TODO: This isn't necessarily true (could have changed tabs)
-                            editor (pool/last-active)]
-
-                        (set-syntax debug-editor (-> @editor :info :type-name))
+                            location (-> call-frames first :location)
+                            file-type (->> location (location->source this) :source source->file-type)
+                            ]
+                        (pool/set-syntax debug-editor file-type)
                         (object/add-tags debug-editor (:default-tags @debug-editor))
                         (object/update! debug-editor [:client] assoc :default this)
                         (let [scope-chain (-> call-frames first :scopeChain js->clj)]
-                          (object/update! debug-sidebar [:debugger] assoc
+                          ;; TODO: Come back to this
+                          ;; This is probably an indication of bad design... the sidebar
+                          ;; needs to be udpated to trigger updates on its bound items
+                          ;; when the client changes (specifically when :debugger data
+                          ;; changes) This is because :debugger data is stored on the
+                          ;; client and we only ever have one panel - the panel just
+                          ;; switches its reference from one client to another and the
+                          ;; actual data it uses comes from the client :debugger map
+                          (add-watch this nil (fn [_ _ _ _]
+                                                (object/merge! debug-sidebar {:refresh true})))
+                          (object/merge! debug-sidebar {:client this})
+                          (object/update! this [:debugger] assoc
                                           :paused? true
-                                          :call-frames call-frames
-                                          ))
+                                          :call-frames call-frames))
                         (object/raise sidebar/rightbar :show debug-sidebar)
                         (if breakpoint
-                          (jump-to-bp breakpoint)
-                          (jump-to-location this (-> call-frames first :location))))))
+                          (jump-to-bp this breakpoint)
+                          (jump-to-location this (-> call-frames first :location) true)))))
 
 
+(behavior ::inspector-detached
+           :triggers #{:Inspector.detached}
+           :reaction (fn [this m]
+                       ;; Add a floating button to page with option
+                       ;; to reconnect or cancel.
+                       ;; TODO: Where to put this button? Option to dismiss required
+                       ;(dom/prepend (object/->content (pool/last-active))
+                       ;             (object/->content (object/create ::reconnect-label (:tab @this))))
+                                    ;(reconnect-button (:tab @this)))
+                       (when (= "replaced_with_devtools" (-> m :params :reason))
+                         (object/merge! debug-sidebar {:reconnect-tab (:tab @this)
+                                                       :show-reconnect true})
+                         (notifos/set-msg! "Dev tools opened: connection closed"))
+                     (object/raise this :close!)))
 
 
 
 (defn get-editor-by-filename
   [filename]
-  (first (filter #(= (-> @% :info :name) "cube.coffee")
+  (first (filter #(= (-> @% :info :name) filename)
                          (object/by-tag :editor))))
-
-
-
-(behavior ::debugger-resumed
-           :triggers #{:debugger-resumed}
-           :reaction (fn [this]
-                       (let [line (get-in @this [:chrome-debugger :paused-at])
-                             cm (ed/->cm-ed this)]
-                       (.removeLineClass cm line "wrapper" "breakpoint-paused"))))
 
 
 ;;; Commands
@@ -652,19 +690,22 @@
                        (object/raise editor :toggle-breakpoint! pos)))})
 
 
-
 (cmd/command {:command :resume-debugger
               :desc "Chrome: Debugger - Resume"
               :exec (fn
-                      ([]  (let [editor (pool/last-active)
-                                 client (eval/get-client! {:command :chrome.remote.debug :origin editor})]
+                      ([]  (let [client (eval/get-client! {:command :chrome.remote.debug :origin editor})]
                              (cmd/exec! :resume-debugger editor client)))
-                      ([editor client]
+                      ([client]
                        (chrome/send client {:id (chrome/next-id)
                                             :method "Debugger.resume"}
                                     (fn [r]
-                                      (object/update! debug-sidebar [:debugger] assoc :paused? false :scope-variables nil :call-frames nil)
-                                      (object/raise editor :debugger-resumed)))))})
+                                      (when-let [paused-at (get-in @client [:debugger :paused-at])]
+                                        (.removeLineClass (ed/->cm-ed (:ed paused-at)) (:line paused-at)
+                                                          "wrapper" "breakpoint-paused"))
+                                      (object/update! client [:debugger] assoc :paused? false
+                                                                       :scope-variables nil
+                                                                       :paused-at nil
+                                                                       :call-frames nil) ))))})
 
 
 (cmd/command {:command :toggle-debug-panel
@@ -672,7 +713,6 @@
               :exec (fn []
                       (object/raise sidebar/rightbar :toggle debug-sidebar))})
 
-(cmd/exec! :toggle-debug-panel)
 
 ;(:type @(eval/find-client {:command :chrome.remote.debug :origin (pool/last-active) :create nil}))
 
@@ -683,9 +723,9 @@
 (cmd/command {:command :pause-debugger
               :desc "Chrome: Debugger - Pause"
               :exec (fn []
-                     (let [editor (pool/last-active)
-                           client (eval/get-client! {:command :chrome.remote.debug :origin editor})]
+                     (let [client (eval/get-client! {:command :chrome.remote.debug :origin editor})]
                        (chrome/send client {:id (chrome/next-id)
                                                :method "Debugger.pause"}
                                        (fn [r]
-                                         (println r)))))})
+                                         nil
+                                         ))))})

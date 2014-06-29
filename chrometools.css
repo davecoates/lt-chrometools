@@ -92,7 +92,16 @@
 .call-stack .source-line:before, .call-stack .source-col:before  {
   content: ":";
 }
-
+.call-stack .source-col {
+  display: none;
+}
+.debug-panel .reconnect-button {
+  display: none;
+}
+.debug-panel .disconnected .controls button { display: none; }
+.debug-panel .reconnect-available .controls .reconnect-button {
+  display: inherit;
+}
 /*
 .debug-panel {
   position: absolute;

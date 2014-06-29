@@ -13,7 +13,7 @@
                             :lt.plugins.chrometools/handle-send!
                             :lt.plugins.chrometools.console/console-log
                             :lt.plugins.chrometools/remove-label
-                            :lt.plugins.chrometools/inspector-detached
+                            :lt.plugins.chrometools.debugger/inspector-detached
                             :lt.plugins.chrometools/clear-queue-on-connect
                             :lt.plugins.chrometools/handle-message
                             :lt.plugins.chrometools/script-parsed
@@ -35,12 +35,10 @@
      :editor.javascript [:lt.plugins.chrometools.debugger/toggle-breakpoint
                          :lt.plugins.chrometools.debugger/add-breakpoint-marker
                          :lt.plugins.chrometools.debugger/remove-breakpoint-marker
-                         :lt.plugins.chrometools.debugger/debugger-resumed
                          ]
      :editor.coffeescript [:lt.plugins.chrometools.debugger/toggle-breakpoint
                            :lt.plugins.chrometools.debugger/add-breakpoint-marker
                            :lt.plugins.chrometools.debugger/remove-breakpoint-marker
-                           :lt.plugins.chrometools.debugger/debugger-resumed
                          ]
      :editor [:lt.plugins.chrometools.debugger/add-breakpoints-gutter]
      :reconnect-label [:lt.plugins.chrometools/on-remove-reconnect-label]

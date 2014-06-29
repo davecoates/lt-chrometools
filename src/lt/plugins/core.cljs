@@ -22,6 +22,7 @@
             [clojure.string :as string])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
+
 ;;;; Connector
 
 ;; Contains remote server details in form hostname:port
@@ -95,7 +96,9 @@
   "Establish connection to url against client this"
   (let [sock (js/WebSocket. url)]
     (set! (.-onopen sock) #(do
-                             (object/merge! this {:connected true})
+                             (object/merge! this {:connected true
+                                                  :scripts nil
+                                                  :debugger nil})
                              (object/raise this :connect)))
     (set! (.-onmessage sock) #(object/raise this
                                             :message
@@ -310,19 +313,6 @@
 
 
 
-(behavior ::inspector-detached
-           :triggers #{:Inspector.detached}
-           :reaction (fn [this m]
-                       ;; Add a floating button to page with option
-                       ;; to reconnect or cancel.
-                       ;; TODO: Where to put this button? Option to dismiss required
-                       (dom/prepend (object/->content (pool/last-active))
-                                    (object/->content (object/create ::reconnect-label (:tab @this))))
-                                    ;(reconnect-button (:tab @this)))
-                       (when (= "replaced_with_devtools" (-> m :params :reason))
-                         (println "Dev tools opened: connection closed"))
-                       (object/raise this :close!)))
-
 
 (behavior ::handle-page-reload
            :triggers #{:Debugger.globalObjectCleared}
@@ -434,9 +424,9 @@
 
 
 (defn find-script-by-id [client id]
-  (first (for [[_ scripts] (:scripts @client) [_ script] scripts
+  (first (for [[basename scripts] (:scripts @client) [_ script] scripts
                :when (= (:scriptId script) id)]
-           script)))
+           (assoc script :basename basename))))
 
 (defn script-exists? [client id cb]
   (send client {:id (next-id) :method "Debugger.canSetScriptSource" :params {:scriptId id}}
@@ -458,9 +448,8 @@
   "Get current call frame id from client. Will only be available is debugger is
   active and paused"
   [client]
-  (when-let [panel (:debug-panel @client)]
-    (println (-> @panel :debugger :selected-frame))
-    (-> @panel :debugger :selected-frame :callFrameId)))
+  (when-let [selected-frame (-> @client :debugger :selected-frame)]
+    (:callFrameId selected-frame)))
 
 
 
@@ -469,7 +458,6 @@
                   :reaction (fn [this msg]
                               (object/raise this (keyword (str (:command msg) "!")) msg)
                               ))
-
 
 ; TODO: For a connection allow selection of a javascript file. Fetch script source
 ; and either map to existing file or create new buffer to allow live eval
