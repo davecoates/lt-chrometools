@@ -10,6 +10,7 @@
                             :lt.plugins.chrometools.eval/js-eval
                             :lt.plugins.chrometools.eval/cljs-exec
                             :lt.plugins.chrometools.eval/change-live
+                            :lt.plugins.chrometools.eval/css-eval
                             :lt.plugins.chrometools/handle-send!
                             :lt.plugins.chrometools.console/console-log
                             :lt.plugins.chrometools/remove-label
@@ -21,7 +22,7 @@
                             :lt.plugins.chrometools/handle-page-reload
                             :lt.plugins.chrometools.debugger/remove-breakpoint
                             :lt.plugins.chrometools.debugger/debugger-paused
-                            :lt.plugins.chrometools.debugger/create-panel-on-connect
+                            :lt.plugins.chrometools.debugger/update-panel-on-connect
                             :lt.plugins.chrometools.debugger/remove-panel-on-disconnect
                             :lt.plugins.chrometools.debugger/remove-breakpoints-on-disconnect
                             ]

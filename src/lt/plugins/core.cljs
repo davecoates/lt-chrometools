@@ -142,7 +142,7 @@
                                      (if (not-empty d)
                                          (select-tab this (-> d js/JSON.parse (js->clj :keywordize-keys true)))
                                        (do
-                                         (cache/store! ::chrome-debugger-port nil)
+                                         (cache/store! cache-key nil)
                                          (popup/popup! {:header "We couldn't connect."
                                                        :body [:span "There was a problem connecting. Check the port and make
                                                               sure chrome was launched with the --remote-debugging-port option"]
@@ -384,11 +384,11 @@
 
 (defn connect-tab [client tab]
   (object/merge! client {:socket (socket client (:webSocketDebuggerUrl tab))
-                         :commands #{:editor.eval.cljs.exec
-                                     :editor.eval.js
+                         :commands #{:editor.eval.js
                                      :chrome.remote.debug
+                                     :editor.eval.cljs.exec
+                                     :editor.eval.css
                                      ;:editor.eval.html
-                                     ;:editor.eval.css
                                      }
                          :tab tab
                          :name (str "Chrome: " (:url tab))
@@ -456,6 +456,7 @@
 (behavior ::handle-send!
                   :triggers #{:send!}
                   :reaction (fn [this msg]
+
                               (object/raise this (keyword (str (:command msg) "!")) msg)
                               ))
 

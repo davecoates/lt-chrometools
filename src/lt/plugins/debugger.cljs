@@ -330,10 +330,13 @@
 
 
 (defn bound-client
-  [obj path f]
+  [obj path f & [{:keys [initial always-call]}]]
   (bound obj (fn []
-               (when-let [client (:client @obj)]
-                 (f (get-in @client (into [:debugger] path)) client)))))
+               (if-let [client (:client @obj)]
+                 (f (get-in @client (into [:debugger] path)) client)
+                 (if always-call
+                   (f nil nil)
+                   initial)))))
 
 
 
@@ -482,13 +485,25 @@
   [call-frames client]
   (str "call-frames" (when (empty? call-frames) " empty")))
 
+(defn connected? []
+  (when-let [client (:client @debug-sidebar)]
+    :connected @client))
+
 
 (defn debug-panel-classes
   [panel state client]
   (let [classes [(if (:paused? state) "paused" "unpaused")]
-        classes (conj classes (if (:connected @client) "connected" "disconnected"))
+        classes (conj classes (if (connected?) "connected" "disconnected"))
         classes (conj classes (when (:show-reconnect @panel) "reconnect-available"))]
+    classes
     (string/join " " classes)))
+
+
+;(object/merge! debug-sidebar {:refresh true})
+;(object/destroy! debug-sidebar)
+;(def debug-sidebar (object/create ::debug-panel))
+;(sidebar/add-item sidebar/rightbar debug-sidebar)
+
 
 
 (defui debug-panel [this]
@@ -496,7 +511,10 @@
    ; This wrapper div exists as I couldn't work out how to apply classes to top
    ; level without overwriting the 'active' class that gets added by LT to show
    ; it in the sidebar
-   [:div {:class (bound-client this [] (partial debug-panel-classes this))}
+   [:div {:class (bound-client this []
+                               (partial debug-panel-classes this)
+                               ;; Always call the above function even if client not available
+                               {:always-call true})}
      [:h1 {} "Debugger"]
      [:div {:class "controls"}
       (debug-panel-resume this)
@@ -609,11 +627,24 @@
 ;                        (object/merge! this {:debug-panel panel}))))
 
 ;; When client disconnects we need to remove the debug panel
+
+(def watch-key :chrome-debugger)
+
 (behavior ::remove-panel-on-disconnect
           :triggers #{:disconnect}
-          :reaction (fn [this client]
-                      (when-let [panel (:debug-panel @this)]
-                        (object/destroy! panel))))
+          :reaction (fn [this]
+                      (remove-watch this watch-key)
+                      (when (= (:client @debug-sidebar) this)
+                        (swap! debug-sidebar dissoc :client))))
+
+(behavior ::update-panel-on-connect
+          :triggers #{:connect}
+          :reaction (fn [this]
+                      (:client @debug-sidebar)
+                      (when-not (:client @debug-sidebar)
+                        (object/merge! debug-sidebar {:client this :show-reconnect false})
+                        (add-watch this watch-key (fn [_ _ _ _]
+                                              (object/merge! debug-sidebar {:refresh true}))))))
 
 
 
@@ -645,7 +676,7 @@
                           ;; client and we only ever have one panel - the panel just
                           ;; switches its reference from one client to another and the
                           ;; actual data it uses comes from the client :debugger map
-                          (add-watch this nil (fn [_ _ _ _]
+                          (add-watch this watch-key (fn [_ _ _ _]
                                                 (object/merge! debug-sidebar {:refresh true})))
                           (object/merge! debug-sidebar {:client this})
                           (object/update! this [:debugger] assoc

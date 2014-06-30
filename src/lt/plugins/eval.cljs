@@ -2,9 +2,11 @@
   (:refer-clojure :exclude [send])
   (:require [lt.objs.editor                  :as editor]
             [lt.object                       :as object]
+            [lt.objs.files :as files]
             [lt.plugins.chrometools   :as ct :refer [send handle-cb next-id]]
             [lt.plugins.js]
             [lt.plugins.chrometools.devtools :as devtools]
+            [clojure.string :as string]
             )
   (:require-macros [lt.macros :refer [behavior defui]]))
 
@@ -52,6 +54,41 @@
                                   cb))))))
     (else)))
 
+(defn extra-escape [code]
+  (-> code
+      (string/replace  "\\" "\\\\")
+      (string/replace "\n" "\\n")
+      (string/replace "'" "\\'")))
+
+
+(defn css-eval-message
+  [path code]
+  (str "
+       var name = \"" (string/replace path #"[/.]" "_" "_") "\";
+       var existing = document.querySelector(\"#\" + name);
+
+      if(existing) {
+        existing.parentNode.removeChild(existing);
+      }
+
+      var neue = document.createElement(\"style\");
+      neue.id = name;
+      neue.type = \"text/css\";
+      neue.innerHTML = \""(extra-escape code) "\";
+
+      document.head.appendChild(neue);
+"))
+
+(behavior ::css-eval
+                  :triggers #{:editor.eval.css!}
+                  :reaction (fn [this msg]
+                              (let [css-msg (css-eval-message (-> msg :data :path) (-> msg :data :code))]
+                                css-msg
+                              (send this {:id (next-id) :method "Runtime.evaluate" :params {:expression  css-msg}}
+                                    (fn [r]
+                                      r
+                                      )))
+                              ))
 
 
 (behavior ::js-eval
