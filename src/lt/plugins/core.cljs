@@ -134,7 +134,6 @@
 (behavior ::connect!
           :triggers #{:connect!}
           :reaction (fn [this url]
-                      (println this)
                       (object/merge! this {:connected true})
                       ;; When a connection occurs we then need to select a tab
                         (let [xhr (fetch/xhr url {}
@@ -230,9 +229,7 @@
 (defn inject-lttools [client]
   (send client {:id (next-id)
               :method "Runtime.evaluate"
-              :params {:expression (load-lttools)}}
-        (fn [r] (println "inject tools" r))
-        ))
+              :params {:expression (load-lttools)}}))
 
 ;; Called when a tab has been selected for debugging
 (behavior ::init-tab
@@ -249,7 +246,7 @@
 (behavior ::print-messages
           :triggers #{:message}
           :reaction (fn [this m]
-                     ; (println "Message " (:method m) (:id m))
+                      ;(println "Message " (:method m) (:id m))
                       ;(println "print messages" m)
                       ;(console/log (pr-str m))
                       ))

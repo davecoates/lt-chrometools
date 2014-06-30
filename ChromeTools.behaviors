@@ -22,12 +22,12 @@
                             :lt.plugins.chrometools/handle-page-reload
                             :lt.plugins.chrometools.debugger/remove-breakpoint
                             :lt.plugins.chrometools.debugger/debugger-paused
+                            :lt.plugins.chrometools.debugger/debugger-resumed
                             :lt.plugins.chrometools.debugger/update-panel-on-connect
-                            :lt.plugins.chrometools.debugger/remove-panel-on-disconnect
+                            :lt.plugins.chrometools.debugger/update-panel-on-disconnect
                             :lt.plugins.chrometools.debugger/remove-breakpoints-on-disconnect
                             ]
      :debug.panel [
-                   :lt.plugins.chrometools.debugger/debug-panel-destroyed
                    :lt.plugins.chrometools.debugger/debug-panel-shown
      ]
      :debug.breakpoint [

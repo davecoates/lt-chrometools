@@ -64,7 +64,7 @@
 (defn css-eval-message
   [path code]
   (str "
-       var name = \"" (string/replace path #"[/.]" "_" "_") "\";
+       var name = \"" (string/replace path #"[/.]" "_") "\";
        var existing = document.querySelector(\"#\" + name);
 
       if(existing) {

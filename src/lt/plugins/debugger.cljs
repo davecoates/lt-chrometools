@@ -154,9 +154,8 @@
                            line (dec (:line gen-pos))
                            column (:column gen-pos)
                            ]
-                       {:lineNumber line :columnNumber column :scriptId id})
-                     {:lineNumber (:line pos) :scriptId id})
-          ]
+                       {:lineNumber (dec line) :columnNumber column :scriptId id})
+                     {:lineNumber (dec (:line pos)) :scriptId id})]
       (chrome/script-exists? client id
                              (fn [exists?]
                                (if-not exists?
@@ -230,7 +229,6 @@
 (behavior ::toggle-breakpoint
            :triggers #{:toggle-breakpoint!}
            :reaction (fn [this pos]
-                       (println "toggle breakpoint...")
                        (let [pos (assoc pos :line (-> pos :line inc))
                              path (-> @this :info :path)
                              client (eval/get-client! {:command :chrome.remote.debug
@@ -332,6 +330,7 @@
 (defn bound-client
   [obj path f & [{:keys [initial always-call]}]]
   (bound obj (fn []
+               obj
                (if-let [client (:client @obj)]
                  (f (get-in @client (into [:debugger] path)) client)
                  (if always-call
@@ -394,6 +393,12 @@
   (let [n (:functionName frame)]
     (if (empty? n) "(anonymous function)" n)))
 
+(defn select-call-frame
+  [client frame]
+  (object/update! client [:debugger] assoc
+                  :scope-variables (:scopeChain frame)
+                  :selected-frame frame))
+
 ;; Displays a call frame file name and location
 (defui call-frame-location
   [panel frame]
@@ -421,9 +426,7 @@
    (call-frame-location panel frame)]
   :click (fn []
            (let [client (:client @panel)]
-             (object/update! client [:debugger] assoc
-                             :scope-variables (:scopeChain frame)
-                             :selected-frame frame))))
+             (select-call-frame client frame))))
 
 
 (defui debug-panel-resume [this]
@@ -453,22 +456,22 @@
   [:button
    {:class "stepover"}  "↴"]
    :click (fn []
-            (println "TODO")
-            ))
+            (let [client (:client @this)]
+              (cmd/exec! :step-over client))))
 
 (defui debug-panel-stepin [this]
   [:button
    {:class "stepinto"}  "↓"]
    :click (fn []
-            (println "TODO???")
-            ))
+            (let [client (:client @this)]
+              (cmd/exec! :step-into client))))
 
 (defui debug-panel-stepout [this]
   [:button
    {:class "stepout"}  "↑"]
    :click (fn []
-            (println "TODO")
-            ))
+            (let [client (:client @this)]
+              (cmd/exec! :step-out client))))
 
 
 (defn create-call-frames
@@ -485,21 +488,17 @@
   [call-frames client]
   (str "call-frames" (when (empty? call-frames) " empty")))
 
-(defn connected? []
-  (when-let [client (:client @debug-sidebar)]
-    :connected @client))
-
+(defn connected? [client]
+  (when client (:connected @client)))
 
 (defn debug-panel-classes
   [panel state client]
   (let [classes [(if (:paused? state) "paused" "unpaused")]
-        classes (conj classes (if (connected?) "connected" "disconnected"))
+        classes (conj classes (if (connected? client) "connected" "disconnected"))
         classes (conj classes (when (:show-reconnect @panel) "reconnect-available"))]
-    classes
-    (string/join " " classes)))
+    (string/join " " (filter identity classes))))
 
 
-;(object/merge! debug-sidebar {:refresh true})
 ;(object/destroy! debug-sidebar)
 ;(def debug-sidebar (object/create ::debug-panel))
 ;(sidebar/add-item sidebar/rightbar debug-sidebar)
@@ -576,8 +575,6 @@
                       (def debug-sidebar (object/create ::debug-panel))
                       (sidebar/add-item sidebar/rightbar debug-sidebar)))
 
-
-
 ;;; We have client which has a key :debug-panel which is a ::debug-panel
 ;;; object. This object creates the HTML and sets up bindings to update scope
 ;;; variables etc - they are bound to keys on the object (eg. :scope-variables)
@@ -590,47 +587,10 @@
                         ;(dom/prepend (object/->content editor) (debug-panel this))))
 
 
-;(behavior ::debug-panel-shown
-;          :triggers #{:show}
-;          :reaction (fn [this]
-;                      (let [client (eval/find-client {:command :chrome.remote.debug
-;                                                      :origin (pool/last-active)})]
-;                      (object/merge! this {:client client}))))
-
-
-(defn ->chrome-clients
-  "From sequence of clients those that are Chrome clients"
-  [clients]
-  (let [valid? (fn [client] (and (= (:type client) "LT-UI")
-                                   (:connected client)))]
-  (filter #(-> % deref valid?) clients)))
-
-;(-> @(pool/last-active) :client vals ->chrome-clients)
-
-;
-
-
-
-(behavior ::debug-panel-destroyed
-          :triggers #{:destroy}
-          :reaction (fn [this]
-                      (println "destroy!!")))
-
-
-;; When a client connects we want to create a debug panel we can use to control
-;; it (eg. pause & resume debugger)
-;(behavior ::create-panel-on-connect
-;          :triggers #{:connect}
-;          :reaction (fn [this]
-;                      (let [editor (pool/last-active)
-;                            panel (object/create ::debug-panel this editor)]
-;                        (object/merge! this {:debug-panel panel}))))
-
-;; When client disconnects we need to remove the debug panel
 
 (def watch-key :chrome-debugger)
 
-(behavior ::remove-panel-on-disconnect
+(behavior ::update-panel-on-disconnect
           :triggers #{:disconnect}
           :reaction (fn [this]
                       (remove-watch this watch-key)
@@ -640,19 +600,21 @@
 (behavior ::update-panel-on-connect
           :triggers #{:connect}
           :reaction (fn [this]
-                      (:client @debug-sidebar)
                       (when-not (:client @debug-sidebar)
                         (object/merge! debug-sidebar {:client this :show-reconnect false})
                         (add-watch this watch-key (fn [_ _ _ _]
                                               (object/merge! debug-sidebar {:refresh true}))))))
 
 
-
 (defn source->file-type
+  "Get file type for source file based on extension
+
+  Returns map if found
+  "
   [source]
-  source
-  (let [ext (-> source files/ext string/lower-case)]
-    (files/ext->type (keyword ext))))
+  (when-let [ext (-> source files/ext)]
+    (files/ext->type (keyword (string/lower-case ext)))))
+
 
 (behavior ::debugger-paused
           :triggers #{:Debugger.paused}
@@ -662,8 +624,7 @@
                             breakpoint (-> params :hitBreakpoints first)
                             call-frames (:callFrames params)
                             location (-> call-frames first :location)
-                            file-type (->> location (location->source this) :source source->file-type)
-                            ]
+                            file-type (->> location (location->source this) :source source->file-type)]
                         (pool/set-syntax debug-editor file-type)
                         (object/add-tags debug-editor (:default-tags @debug-editor))
                         (object/update! debug-editor [:client] assoc :default this)
@@ -681,11 +642,24 @@
                           (object/merge! debug-sidebar {:client this})
                           (object/update! this [:debugger] assoc
                                           :paused? true
-                                          :call-frames call-frames))
+                                          :call-frames call-frames)
+                          (select-call-frame this (first call-frames)))
                         (object/raise sidebar/rightbar :show debug-sidebar)
                         (if breakpoint
                           (jump-to-bp this breakpoint)
                           (jump-to-location this (-> call-frames first :location) true)))))
+
+
+
+(behavior ::debugger-resumed
+          :triggers #{:Debugger.resumed}
+          :reaction (fn [client]
+                      (when-let [paused-at (get-in @client [:debugger :paused-at])]
+                        (.removeLineClass (ed/->cm-ed (:ed paused-at)) (:line paused-at)
+                                          "wrapper" "breakpoint-paused"))
+                      (object/update! client [:debugger] assoc :paused? false
+                                      :paused-at nil)))
+
 
 
 (behavior ::inspector-detached
@@ -710,7 +684,6 @@
   (first (filter #(= (-> @% :info :name) filename)
                          (object/by-tag :editor))))
 
-
 ;;; Commands
 
 (cmd/command {:command :toggle-breakpoint
@@ -719,24 +692,6 @@
                      (let [editor (pool/last-active)
                            pos (ed/->cursor editor)]
                        (object/raise editor :toggle-breakpoint! pos)))})
-
-
-(cmd/command {:command :resume-debugger
-              :desc "Chrome: Debugger - Resume"
-              :exec (fn
-                      ([]  (let [client (eval/get-client! {:command :chrome.remote.debug :origin editor})]
-                             (cmd/exec! :resume-debugger editor client)))
-                      ([client]
-                       (chrome/send client {:id (chrome/next-id)
-                                            :method "Debugger.resume"}
-                                    (fn [r]
-                                      (when-let [paused-at (get-in @client [:debugger :paused-at])]
-                                        (.removeLineClass (ed/->cm-ed (:ed paused-at)) (:line paused-at)
-                                                          "wrapper" "breakpoint-paused"))
-                                      (object/update! client [:debugger] assoc :paused? false
-                                                                       :scope-variables nil
-                                                                       :paused-at nil
-                                                                       :call-frames nil) ))))})
 
 
 (cmd/command {:command :toggle-debug-panel
@@ -749,14 +704,100 @@
 
 ;(count @clients/cs)
 
+(defn get-current-client
+  []
+  (when debug-sidebar
+    (:client @debug-sidebar)))
+
+
+(defn display-error
+  [msg]
+  (when-let [msg (-> result :error :message)]
+    (notifos/set-msg! (str "Failed: " msg))))
 
 
 (cmd/command {:command :pause-debugger
               :desc "Chrome: Debugger - Pause"
-              :exec (fn []
-                     (let [client (eval/get-client! {:command :chrome.remote.debug :origin editor})]
+              :exec (fn
+                      ([] (cmd/exec! :pause-debugger (get-current-client)))
+                      ([client]
                        (chrome/send client {:id (chrome/next-id)
                                                :method "Debugger.pause"}
-                                       (fn [r]
-                                         nil
-                                         ))))})
+                                    display-error)))})
+
+
+(cmd/command {:command :resume-debugger
+              :desc "Chrome: Debugger - Resume"
+              :exec (fn
+                      ([] (cmd/exec! :resume-debugger (get-current-client)))
+                      ([client]
+                       (chrome/send client {:id (chrome/next-id)
+                                            :method "Debugger.resume"}
+                                    (fn [result]
+                                      ;; This shouldn't really happen. Possibly remove - useful
+                                      ;; during development as I regularly broke things
+                                      (when-let [msg (-> result :error :message)]
+                                        (if (= msg "Can only perform operation while paused.")
+                                          (do
+                                            (notifos/set-msg! "Debugger not paused, cannot resume")
+                                            (object/raise :Debugger.resumed client))
+                                          (notifos/set-msg! (str "Failed: " msg))))))))})
+
+
+(cmd/command {:command :step-into
+              :desc "Chrome: Debugger - Step Into"
+              :exec (fn
+                      ([] (cmd/exec! :step-into (get-current-client)))
+                      ([client]
+                       (chrome/send client {:id (chrome/next-id)
+                                               :method "Debugger.stepInto"}
+                                    display-error)))})
+
+(cmd/command {:command :step-out
+              :desc "Chrome: Debugger - Step Out"
+              :exec (fn
+                      ([] (cmd/exec! :step-out (get-current-client)))
+                      ([client]
+                       (chrome/send client {:id (chrome/next-id)
+                                               :method "Debugger.stepOut"}
+                                    display-error)))})
+
+(cmd/command {:command :step-over
+              :desc "Chrome: Debugger - Step Over"
+              :exec (fn
+                      ([] (cmd/exec! :step-over (get-current-client)))
+                      ([client]
+                       (chrome/send client {:id (chrome/next-id)
+                                            :method "Debugger.stepOver"}
+                                    display-error)))})
+(cmd/command {:command :step-over
+              :desc "Chrome: Debugger - Step Over"
+              :exec (fn
+                      ([] (cmd/exec! :step-over (get-current-client)))
+                      ([client]
+                       (chrome/send client {:id (chrome/next-id)
+                                            :method "Debugger.stepOver"}
+                                    display-error)))})
+
+
+;; TODO: These commands don't seem to work although no errors are returned
+(cmd/command {:command :activate-breakpoints
+              :desc "Chrome: Debugger - Activate Breakpoints"
+              :hidden true
+              :exec (fn
+                      ([] (cmd/exec! :activate-breakpoints (get-current-client)))
+                      ([client]
+                       (chrome/send client {:id (chrome/next-id)
+                                            :method "Debugger.setBreakpointsActive"
+                                            :params {:active true}})))})
+
+
+(cmd/command {:command :deactivate-breakpoints
+              :desc "Chrome: Debugger - De-activate Breakpoints"
+              ;:hidden true
+              :exec (fn
+                      ([] (cmd/exec! :activate-breakpoints (get-current-client)))
+                      ([client]
+                       (chrome/send client {:id (chrome/next-id)
+                                            :method "Debugger.setBreakpointsActive"
+                                            :params {:active false}})))})
