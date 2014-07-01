@@ -70,8 +70,8 @@
           nil
         )))))
 
-
-
+;; TODO: Currently this doesn't work for files, only dirs. Calling .watch on a file
+;; never seems to fire callback
 (defn watch-file
   "Watch a file or directory for change. Note that this doesn't watch recursively."
   [client path]
@@ -109,7 +109,7 @@
 (def active-dialog nil)
 
 (defui input [type event client]
-  [:input {:type "file" type true :multiple true :style "display:none;"}]
+  [:input {:type "file" type true :multiple (= type :file) :style "display:none;"}]
   :change (fn []
             (this-as me
                      (when-not (empty? (dom/val me))

@@ -819,7 +819,7 @@
               :exec (fn
                       ([] (let [client (get-current-client)]
                             (if client
-                              (cmd/exec! :watch-file client)
+                              (cmd/exec! :watch-folder client)
                               (notifos/set-msg! "Connect a client before adding watches"))))
                       ([client]
                        (filewatch/open-folder client)))})
