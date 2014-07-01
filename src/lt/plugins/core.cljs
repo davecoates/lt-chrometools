@@ -170,7 +170,7 @@
                       (when-let [cbs (:queued-callbacks @this)]
                         ; Dirty hack :( Delay slightly to let debug initialise first
                         ; and receive events for script-parsed etc
-                        (wait 4500 (fn []
+                        (wait 500 (fn []
                                     (doseq [cb (:queued-callbacks @this)]
                                       cb
                                       (cb)))))))

@@ -18,6 +18,7 @@
    [clojure.set               :as cljset]
    [lt.util.cljs :refer [js->clj]]
    [lt.plugins.chrometools :as chrome]
+   [lt.plugins.chrometools.filewatch :as filewatch]
    [lt.plugins.chrometools.devtools :as devtools])
   (:require-macros [lt.macros :refer [behavior defui]]
                    [lt.plugins.chrometools :refer [with-client]]
@@ -801,3 +802,24 @@
                        (chrome/send client {:id (chrome/next-id)
                                             :method "Debugger.setBreakpointsActive"
                                             :params {:active false}})))})
+
+(cmd/command {:command :watch-file
+              :desc "Chrome: Watch file for changes"
+              :exec (fn
+                      ([] (let [client (get-current-client)]
+                            (if client
+                              (cmd/exec! :watch-file client)
+                              (notifos/set-msg! "Connect a client before adding watches"))))
+                      ([client]
+                       (filewatch/open-file client)))})
+
+
+(cmd/command {:command :watch-folder
+              :desc "Chrome: Watch folder for changes"
+              :exec (fn
+                      ([] (let [client (get-current-client)]
+                            (if client
+                              (cmd/exec! :watch-file client)
+                              (notifos/set-msg! "Connect a client before adding watches"))))
+                      ([client]
+                       (filewatch/open-folder client)))})

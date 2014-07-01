@@ -82,6 +82,7 @@
 (behavior ::css-eval
                   :triggers #{:editor.eval.css!}
                   :reaction (fn [this msg]
+                              msg
                               (let [css-msg (css-eval-message (-> msg :data :path) (-> msg :data :code))]
                                 css-msg
                               (send this {:id (next-id) :method "Runtime.evaluate" :params {:expression  css-msg}}
