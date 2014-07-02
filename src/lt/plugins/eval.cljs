@@ -58,6 +58,7 @@
   (-> code
       (string/replace  "\\" "\\\\")
       (string/replace "\n" "\\n")
+      (string/replace "\"" "\\\"")
       (string/replace "'" "\\'")))
 
 
@@ -66,15 +67,17 @@
   (str "
        var name = \"" (string/replace path #"[/.]" "_") "\";
        var existing = document.querySelector(\"#\" + name);
-
+      // Remove existing that we have already added
       if(existing) {
         existing.parentNode.removeChild(existing);
       }
+      // Also try removing existing stylesheet linked in document
+      lttools.removeStylesheet(\"" path "\");
 
       var neue = document.createElement(\"style\");
       neue.id = name;
       neue.type = \"text/css\";
-      neue.innerHTML = \""(extra-escape code) "\";
+      neue.innerHTML = \"" (extra-escape code) "\";
 
       document.head.appendChild(neue);
 "))
@@ -87,7 +90,7 @@
                                 css-msg
                               (send this {:id (next-id) :method "Runtime.evaluate" :params {:expression  css-msg}}
                                     (fn [r]
-                                      r
+                                      (println r)
                                       )))
                               ))
 

@@ -11,6 +11,7 @@
             [lt.object :as object]
             [lt.objs.clients :as clients]
             [lt.objs.eval :as eval]
+            [lt.objs.plugins :as plugins]
             [fetch.core :as fetch]
             [lt.objs.notifos :as notifos]
             [lt.util.dom :as dom]
@@ -182,54 +183,19 @@
 ;; TODO: This is problematic in that it opens a new connection that shows
 ;; in the available connection list (and so could be manually disconnected)
 (def lttools-group-name "LTTOOLSWATCHER")
-(defn load-lttools [] (str "
-  (function () {
-   function replacer(key, value) {
-    if(cache.length > 20) {
-      return;
-    }
-    if(window.jQuery && value instanceof jQuery) {
-      return \"[jQuery $(\" + value.selector + \")]\";
-    }
-    if(value instanceof Element) {
-      return \"[Element \" + value.tagName.toLowerCase() + (value.id != \"\" ? \"#\" : \"\") + value.id + \"]\";
-    }
-    if(typeof(value) == \"object\") {
-      if(cache.indexOf(value) > -1) {
-        return \"circular\";
-      }
-      cache.push(value);
-      return value;
-    }
-    if(typeof value == \"function\") {
-      return \"[function]\";
-    }
-    return value;
-  }
+(files/exists? (files/join plugins/user-plugins-dir "lt_chrometools"))
 
-  function safeStringify(res) {
-    cache = [];
-    return JSON.stringify(res, replacer);
-  }
-     window.lttools = {
-      watch: function(exp, meta) {
-        var w = {
-          exp: safeStringify(exp),
-          meta: meta
-        };
-        console.group(\"" lttools-group-name "\")
-        console.log(w);
-        console.groupEnd();
-      }
-    };
- }());
-  "))
+
+(defn get-lttools-source []
+  (let [content (files/bomless-read (str (plugins/find-plugin "lt-chrometools") "/src/lt/plugins/lttools.js"))]
+    (string/replace content "__LTTOOLS_GROUP_NAME__" lttools-group-name)))
 
 
 (defn inject-lttools [client]
   (send client {:id (next-id)
               :method "Runtime.evaluate"
-              :params {:expression (load-lttools)}}))
+              :params {:expression (get-lttools-source)}}))
+
 
 ;; Called when a tab has been selected for debugging
 (behavior ::init-tab

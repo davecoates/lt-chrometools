@@ -52,9 +52,8 @@
 (defn listener
   "Listener for watch-file. Calls relevant change function based on file type."
   [{:keys [client path is-dir]} e filename]
-  (println filename)
-  (when (and (= e "rename")
-             client
+  (println e filename)
+  (when (and client
              (-> @client :connected))
     (if (and (empty? filename) is-dir)
       ;; If we have no filename and the path is a director then we can do nothing
@@ -64,6 +63,7 @@
                    (string/join "/" (conj (string/split path "/") filename))
                    path)
             ext (files/ext path)]
+        (println ext path)
         (case ext
           "js" (js-file-change client path)
           "css" (css-file-change client path)
