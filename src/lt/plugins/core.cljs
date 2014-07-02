@@ -384,15 +384,40 @@
   (object/raise clients/clients :message [cbid command data]))
 
 
+(defn lcm-start
+  "Get longest common sequence from start of each sequence"
+  [coll1 coll2]
+  (loop [i 0]
+    (if (and (= (nth coll1 i) (nth coll2 i))
+             (< i (count coll1)))
+      (recur (inc i))
+      (take i coll1))))
 
 
-;; TODO: This doesn't match duplicate script names properly
-;; eg directives/schedule.coffee
-;;    controllers/schedule.coffee
+(defn longest-path-match
+  [path candidates]
+  (let [; Convert path to it's parts, reversed without the filename
+        path->parts (fn [p] (->> (string/split p "/")
+                                 (filter not-empty) reverse (drop 1)))
+        parts (path->parts path)
+        ; Create map of all candidates with the longest common match
+        ; stored in :count - this is
+        counts (map (fn [c]  {:count (count (lcm-start parts (path->parts c)))
+                              :path c
+                              }) candidates)
+        n (:count (apply (partial max-key :count) counts))
+        ]
+    ; Return sequence of candidates that had equal longest match
+    (map :path (filter #(= (:count %) 2) counts))))
+
+
 (defn find-script [client path]
-  (let [found? (-> (@client :scripts)
+  (when-let [scripts (-> (@client :scripts)
                    (get (files/basename path)))]
-    found?))
+    ;; Get best matches based on common components in path
+    (let [matches (set (longest-path-match path (keys scripts)))]
+      ;; Create a new map that only contains scripts that matched
+      (into {} (filter #(contains? matches (first %1)) scripts)))))
 
 
 (defn find-script-by-id [client id]
