@@ -25,7 +25,7 @@
                    ))
 
 
-(def source-map (js/require (plugins/local-module "ChromeTools" "source-map")))
+(def source-map (js/require (plugins/local-module "lt_chrometools" "source-map")))
 (def SourceMapConsumer (.-SourceMapConsumer source-map))
 
 
@@ -66,6 +66,7 @@
 
 (object/object* ::breakpoint
                 :tags #{:debug.breakpoint}
+                :behaviors #{::breakpoint-destroyed}
                 :init (fn [this ed client line]
                         (object/merge! this {:client client
                                              :editor ed

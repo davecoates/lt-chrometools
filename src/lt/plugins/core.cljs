@@ -253,10 +253,16 @@
         (store-source-map client url params data)
         (cb data))
       (fetch/xhr sm-url {}
-               (fn [d]
-                 (when-let [data (js->clj (js/JSON.parse d) :keywordize-keys true)]
-                   (store-source-map client url params data)
-                   (cb data)))))))
+               (fn [d r]
+                 (try
+                   (when-let [data (js->clj (js/JSON.parse d) :keywordize-keys true)]
+                     (store-source-map client url params data)
+                     (cb data))
+                   (catch :default e
+                     (println "Failed to parse source-map " sm-url)
+                     (println e)
+                     e))
+                   )))))
 
 
 

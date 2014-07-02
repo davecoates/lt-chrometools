@@ -27,12 +27,6 @@
                             :lt.plugins.chrometools.debugger/update-panel-on-disconnect
                             :lt.plugins.chrometools.debugger/remove-breakpoints-on-disconnect
                             ]
-     :debug.panel [
-                   :lt.plugins.chrometools.debugger/debug-panel-shown
-     ]
-     :debug.breakpoint [
-                    :lt.plugins.chrometools.debugger/breakpoint-destroyed
-     ]
      :editor.javascript [:lt.plugins.chrometools.debugger/toggle-breakpoint
                          :lt.plugins.chrometools.debugger/add-breakpoint-marker
                          :lt.plugins.chrometools.debugger/remove-breakpoint-marker
