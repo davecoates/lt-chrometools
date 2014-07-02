@@ -3,6 +3,7 @@
   (:require [lt.objs.editor                  :as editor]
             [lt.object                       :as object]
             [lt.objs.files :as files]
+            [lt.objs.notifos :as notifos]
             [lt.plugins.chrometools   :as ct :refer [send handle-cb next-id]]
             [lt.plugins.js]
             [lt.plugins.chrometools.devtools :as devtools]
@@ -122,9 +123,13 @@
                                                code
                                                (fn [res]
                                                  (if (:error res)
-                                                   (object/raise ed :editor.eval.js.change-live.error (:error res))
+                                                   (do
+                                                     (notifos/set-msg! (-> res :error :message))
+                                                     (object/raise ed :editor.eval.js.change-live.error (:error res)))
                                                    ;;TODO: check for exception, otherwise, assume success
-                                                   (object/raise ed :editor.eval.js.change-live.success)))
+                                                   (do
+                                                     (notifos/set-msg! "LiveEdit Success: Script updated")
+                                                     (object/raise ed :editor.eval.js.change-live.success))))
                                                  identity))))))
 
 

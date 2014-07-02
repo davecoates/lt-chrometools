@@ -183,11 +183,11 @@
 ;; TODO: This is problematic in that it opens a new connection that shows
 ;; in the available connection list (and so could be manually disconnected)
 (def lttools-group-name "LTTOOLSWATCHER")
-(files/exists? (files/join plugins/user-plugins-dir "lt_chrometools"))
+(files/exists? (files/join plugins/user-plugins-dir "chrometools"))
 
 
 (defn get-lttools-source []
-  (let [content (files/bomless-read (str (plugins/find-plugin "lt-chrometools") "/src/lt/plugins/lttools.js"))]
+  (let [content (files/bomless-read (str (plugins/find-plugin "chrometools") "/src/lt/plugins/lttools.js"))]
     (string/replace content "__LTTOOLS_GROUP_NAME__" lttools-group-name)))
 
 
@@ -206,7 +206,7 @@
                        (send this {:id (next-id) :method "Runtime.enable"})
                        (send this {:id (next-id) :method "Console.enable"})
                        (send this {:id (next-id) :method "Debugger.enable"}
-                             (inject-lttools this))
+                             (fn [_] (inject-lttools this)))
                        (send this {:id (next-id) :method "Network.setCacheDisabled" :params {:cacheDisabled true}})))
 
 (behavior ::print-messages
@@ -265,20 +265,20 @@
                    )))))
 
 
-
 (behavior ::script-parsed
           :triggers #{:Debugger.scriptParsed}
           :reaction (fn [this s]
-                      (let [params (:params s)
-                            source-map-url (:sourceMapURL params)
-                            url (:url params)]
-                        (if source-map-url
-                          (load-source-map this params
-                                           (fn [sm]
-                                             (object/update! this [:scripts] assoc-in
-                                                             [(files/basename url) url]
-                                                             (assoc params :sourceMap sm))))
-                          (object/update! this [:scripts] assoc-in [(files/basename url) url] (:params s))))))
+                      (when (not-empty (-> s :params :url))
+                        (let [params (:params s)
+                              source-map-url (:sourceMapURL params)
+                              url (:url params)]
+                          (if source-map-url
+                            (load-source-map this params
+                                             (fn [sm]
+                                               (object/update! this [:scripts] assoc-in
+                                                               [(files/basename url) url]
+                                                               (assoc params :sourceMap sm))))
+                            (object/update! this [:scripts] assoc-in [(files/basename url) url] (:params s)))))))
 
 
 
@@ -386,6 +386,9 @@
 
 
 
+;; TODO: This doesn't match duplicate script names properly
+;; eg directives/schedule.coffee
+;;    controllers/schedule.coffee
 (defn find-script [client path]
   (let [found? (-> (@client :scripts)
                    (get (files/basename path)))]

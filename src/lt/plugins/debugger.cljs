@@ -25,7 +25,7 @@
                    ))
 
 
-(def source-map (js/require (plugins/local-module "lt_chrometools" "source-map")))
+(def source-map (js/require (plugins/local-module "chrometools" "source-map")))
 (def SourceMapConsumer (.-SourceMapConsumer source-map))
 
 
@@ -156,8 +156,8 @@
                            line (dec (:line gen-pos))
                            column (:column gen-pos)
                            ]
-                       {:lineNumber (dec line) :columnNumber column :scriptId id})
-                     {:lineNumber (dec (:line pos)) :scriptId id})]
+                       {:lineNumber line :columnNumber column :scriptId id})
+                     {:lineNumber (dec (:line pos)) :scriptId id :columnNumber 3})]
       (chrome/script-exists? client id
                              (fn [exists?]
                                (if-not exists?
@@ -168,7 +168,8 @@
                                               (fn [r]
                                                 (let [error (:error r)
                                                       success? (nil? error)]
-                                                  (cb success? (if success? (:result r) error)))))))))))
+                                                  (cb success? (if success? (:result r) error)))))))))
+    (notifos/set-msg! "Couldn't find script to set breakpoint in")))
 
 
 (defn remove-breakpoint
