@@ -26,6 +26,8 @@
                             :lt.plugins.chrometools.debugger/update-panel-on-connect
                             :lt.plugins.chrometools.debugger/update-panel-on-disconnect
                             :lt.plugins.chrometools.debugger/remove-breakpoints-on-disconnect
+                            :lt.plugins.chrometools.filewatch/remove-watch-on-disconnect
+                            :lt.plugins.chrometools.filewatch/add-watches-on-connect
                             ]
      :editor.javascript [:lt.plugins.chrometools.debugger/toggle-breakpoint
                          :lt.plugins.chrometools.debugger/add-breakpoint-marker

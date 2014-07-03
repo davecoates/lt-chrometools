@@ -52,7 +52,6 @@
 (defn listener
   "Listener for watch-file. Calls relevant change function based on file type."
   [{:keys [client path is-dir]} e filename]
-  (println e filename)
   (when (and client
              (-> @client :connected))
     (if (and (empty? filename) is-dir)
@@ -63,12 +62,12 @@
                    (string/join "/" (conj (string/split path "/") filename))
                    path)
             ext (files/ext path)]
-        (println ext path)
         (case ext
           "js" (js-file-change client path)
           "css" (css-file-change client path)
           nil
         )))))
+
 
 ;; TODO: Currently this doesn't work for files, only dirs. Calling .watch on a file
 ;; never seems to fire callback
@@ -87,6 +86,31 @@
   (when-let [watcher (get-in @client [:file-watches path])]
     (.close watcher)
     (object/update! client [:file-watches] dissoc path)))
+
+
+(def removed-watches (atom {}))
+
+(behavior ::remove-watch-on-disconnect
+           :triggers #{:disconnect}
+           :reaction (fn [client]
+                       (let [tab-id (-> @client :tab :id)]
+                         (doseq [[path watcher] (:file-watches @client)]
+                           (swap! removed-watches update-in [tab-id] conj path)
+                           (.close watcher)))))
+
+(behavior ::add-watches-on-connect
+           :triggers #{:connect}
+           :reaction (fn [client]
+                       (when-let [tab-id (-> @client :tab :id)]
+                         (let [paths (get @removed-watches tab-id)]
+                           (when (not-empty paths)
+                             (doseq [path paths]
+                               (watch-file client path))
+                             (swap! removed-watches dissoc tab-id)
+                             (notifos/set-msg! (str "Re-added file watches on "
+                                                    (string/join ", " paths))))))))
+
+
 
 
 (behavior ::watch-path

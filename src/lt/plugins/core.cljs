@@ -392,11 +392,13 @@
 (defn lcm-start
   "Get longest common sequence from start of each sequence"
   [coll1 coll2]
-  (loop [i 0]
-    (if (and (= (nth coll1 i) (nth coll2 i))
-             (< i (count coll1)))
-      (recur (inc i))
-      (take i coll1))))
+  (let [c1 (count coll1)
+        c2 (count coll2)]
+    (loop [i 0]
+      (if (and (< i c1 c2)
+               (= (nth coll1 i) (nth coll2 i)))
+        (recur (inc i))
+        (take i coll1)))))
 
 
 (defn longest-path-match
