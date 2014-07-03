@@ -451,7 +451,6 @@
   :click (fn []
            (let [tab (:reconnect-tab @this)
                  client (clients/client! :chrome.client.remote)]
-             (swap! this dissoc :show-reconnect)
              (chrome/connect-tab client tab))))
 
 

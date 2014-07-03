@@ -37,4 +37,10 @@
                          ]
      :editor [:lt.plugins.chrometools.debugger/add-breakpoints-gutter]
      :reconnect-label [:lt.plugins.chrometools/on-remove-reconnect-label]
-     }}
+     }
+ :- {:editor.debugger [:lt.plugins.reminisce/editor-state
+              :lt.plugins.reminisce/trigger-cache-tabs
+
+              :lt.plugins.reminisce/cache-state
+              :lt.plugins.reminisce/queue]}
+ }

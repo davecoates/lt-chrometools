@@ -183,12 +183,12 @@
 ;; TODO: This is problematic in that it opens a new connection that shows
 ;; in the available connection list (and so could be manually disconnected)
 (def lttools-group-name "LTTOOLSWATCHER")
-(files/exists? (files/join plugins/user-plugins-dir "chrometools"))
 
 
 (defn get-lttools-source []
   (let [content (files/bomless-read (str (plugins/find-plugin "chrometools") "/src/lt/plugins/lttools.js"))]
     (string/replace content "__LTTOOLS_GROUP_NAME__" lttools-group-name)))
+
 
 
 (defn inject-lttools [client]
@@ -352,17 +352,22 @@
 
 
 (defn connect-tab [client tab]
-  (object/merge! client {:socket (socket client (:webSocketDebuggerUrl tab))
-                         :commands #{:editor.eval.js
-                                     :chrome.remote.debug
-                                     :editor.eval.cljs.exec
-                                     :editor.eval.css
-                                     ;:editor.eval.html
-                                     }
-                         :tab tab
-                         :name (str "Chrome: " (:url tab))
-                         :type "Chrome" })
-  (swap! connected-tabs assoc (:id tab) client))
+  (try
+    (object/merge! client {:socket (socket client (:webSocketDebuggerUrl tab))
+                           :commands #{:editor.eval.js
+                                       :chrome.remote.debug
+                                       :editor.eval.cljs.exec
+                                       :editor.eval.css
+                                       ;:editor.eval.html
+                                       }
+                           :tab tab
+                           :name (str "Chrome: " (:url tab))
+                           :type "Chrome" })
+    (swap! connected-tabs assoc (:id tab) client)
+    (catch :default e
+      (object/raise client :close!)
+      (notifos/set-msg! "Failed to connect. Is dev tools open?")
+      nil)))
 
 
 (defn select-tab [client tabs]
@@ -408,7 +413,7 @@
         n (:count (apply (partial max-key :count) counts))
         ]
     ; Return sequence of candidates that had equal longest match
-    (map :path (filter #(= (:count %) 2) counts))))
+    (map :path (filter #(= (:count %) n) counts))))
 
 
 (defn find-script [client path]
