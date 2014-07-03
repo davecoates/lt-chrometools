@@ -1,4 +1,4 @@
-(function (window, jQuery) {
+(function (window) {
   var cache = [];
   function replacer(key, value) {
     if(cache.length > 20) {
@@ -89,5 +89,5 @@
     },
     removeStylesheet: removeStylesheet
   };
-}(window, jQuery));
+}(window));
 

@@ -203,10 +203,10 @@
            :reaction (fn [this]
                        ;; Copy lttools object from browser utils. This gives us
                        ;; things like JS watches.
-                       (send this {:id (next-id) :method "Runtime.enable"})
-                       (send this {:id (next-id) :method "Console.enable"})
-                       (send this {:id (next-id) :method "Debugger.enable"}
+                       (send this {:id (next-id) :method "Runtime.enable"}
                              (fn [_] (inject-lttools this)))
+                       (send this {:id (next-id) :method "Console.enable"})
+                       (send this {:id (next-id) :method "Debugger.enable"})
                        (send this {:id (next-id) :method "Network.setCacheDisabled" :params {:cacheDisabled true}})))
 
 (behavior ::print-messages

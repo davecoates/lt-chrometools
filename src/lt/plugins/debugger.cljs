@@ -618,6 +618,12 @@
     (files/ext->type (keyword (string/lower-case ext)))))
 
 
+(defn show-debug-sidebar []
+  (when (not= (:active @sidebar/rightbar) debug-sidebar)
+    (object/raise sidebar/rightbar :toggle debug-sidebar)))
+
+
+
 (behavior ::debugger-paused
           :triggers #{:Debugger.paused}
           :reaction (fn [this s]
@@ -646,11 +652,10 @@
                                           :paused? true
                                           :call-frames call-frames)
                           (select-call-frame this (first call-frames)))
-                        (object/raise sidebar/rightbar :show debug-sidebar)
+                        (show-debug-sidebar)
                         (if breakpoint
                           (jump-to-bp this breakpoint)
                           (jump-to-location this (-> call-frames first :location) true)))))
-
 
 
 (behavior ::debugger-resumed
