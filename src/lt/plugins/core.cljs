@@ -395,7 +395,8 @@
   (let [c1 (count coll1)
         c2 (count coll2)]
     (loop [i 0]
-      (if (and (< i c1 c2)
+      (if (and (< i c1)
+               (< i c2)
                (= (nth coll1 i) (nth coll2 i)))
         (recur (inc i))
         (take i coll1)))))
