@@ -66,7 +66,7 @@
      (do
        (if (and (= (-> c :value :type) "object")
                 (-> c :value :objectId))
-         [:li (object/->content (object/create ::inspector-object (:client @this) c))]
+         [:li (object/->content (object/create ::inspector-object (:client @this) c (-> @this :depth inc)))]
          [:li [:em (:name c)] ": " (or (-> c :value :description) (str (-> c :value format-value)))])))])
 
 (defn ->open [this]
@@ -107,19 +107,22 @@
 
 (object/object* ::inspector-object
                 :tags #{:inspector.object}
-                :init (fn [this client m]
-                        (object/merge! this {:client client
-                                             :open true
-                                             :info m})
-                        [:div {:class (bound this ->open)}
-                                         (desc this m)
-                                         [:div
-                                          (bound (subatom this :children) (partial props this))]]
-                          ))
+                :init (fn [this client m depth]
+                        (let [depth (or depth 0)]
+                          m
+                          (object/merge! this {:client client
+                                               :depth depth
+                                               :info m})
+                          [:div {:class (bound this ->open)}
+                           (desc this m)
+                           [:div
+                            (bound (subatom this :children) (partial props this))]]
+                          )))
+
 
 (behavior ::auto-open-inspector-object
            :triggers #{:init}
            :reaction (fn [this client m]
-                       this
-                       (open-inspector this m)
-           ))
+                       (when (= (:depth @this) 0)
+                         (:info @this)
+                         (open-inspector this (:info @this)))))
