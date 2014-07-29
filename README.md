@@ -32,4 +32,13 @@ devtools when necessary and then re-establish your debugging connection when
 done.
 
 
+## Options
 
+The following options can be added to your behaviors file,
+
+```clojurescript 
+{:+ {
+  :inspector.object [:lt.plugins.chrometools.devtools/auto-open-inspector-object]
+  }
+}
+```

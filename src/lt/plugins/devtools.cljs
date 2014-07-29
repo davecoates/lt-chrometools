@@ -46,17 +46,19 @@
      (> (.indexOf n "e.fn.e.init") -1) (str "jQuery" (subs n 11))
      :else n)))
 
+(defn open-inspector [this obj]
+  (object/merge! this {:open true})
+  (when-not (seq (:children @this))
+    (send (:client @this) {:id 1 :method "Runtime.getProperties" :params {:objectId (or (-> obj :value :objectId) (:objectId obj)) :ownProperties true}}
+          (fn [d]
+            (object/merge! this {:children (-> d :result :result)})))))
+
 (defui desc [this obj]
   [:h2 [:em (->name obj)] (when (:value obj) (str ": " (-> obj :value :description)))]
   :click (fn []
            (if (:open @this)
              (object/merge! this {:open false})
-             (do
-               (object/merge! this {:open true})
-               (when-not (seq (:children @this))
-                 (send (:client @this) {:id 1 :method "Runtime.getProperties" :params {:objectId (or (-> obj :value :objectId) (:objectId obj)) :ownProperties true}}
-                       (fn [d]
-                         (object/merge! this {:children (-> d :result :result)}))))))))
+             (open-inspector this obj))))
 
 (defui props [this children]
   [:ul
@@ -107,8 +109,17 @@
                 :tags #{:inspector.object}
                 :init (fn [this client m]
                         (object/merge! this {:client client
+                                             :open true
                                              :info m})
                         [:div {:class (bound this ->open)}
-                         (desc this m)
-                         [:div
-                          (bound (subatom this :children) (partial props this))]]))
+                                         (desc this m)
+                                         [:div
+                                          (bound (subatom this :children) (partial props this))]]
+                          ))
+
+(behavior ::auto-open-inspector-object
+           :triggers #{:init}
+           :reaction (fn [this client m]
+                       this
+                       (open-inspector this m)
+           ))
